@@ -242,7 +242,8 @@ links to Home. In the window, the **Rules** tab.
   stays: *Replace the older rule* — the new one takes its place in the order — or *Keep the older
   rule*.
 - **The list** shows an app rule under *When a link comes from* and an address rule under *or its
-  address has* — one list, so the order counts across both.
+  address has* — one list, so the order counts across both. An app rule shows its app's icon (when
+  the program can be found), and *Goes to profile* the browser's icon as that profile shows it.
 - **Rules on / off — one switch for all of them**, reachable three ways: the **Use rules** tick at the
   top of the window, *Use rules* in the dock's right-click menu, and its own **keyboard shortcut**
   (on the *Shortcuts* tab, suggested Ctrl+Alt+R, or the nearest free one). Off, every link simply opens in

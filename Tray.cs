@@ -445,7 +445,7 @@ class Tray : ApplicationContext
     // The browser's icon as that profile shows it: for Brave, Chrome and Edge the one with the
     // profile's picture on it, which the browser keeps in the profile's folder; otherwise the plain
     // icon from the exe (Firefox has no per-profile icons).
-    static Icon BrowserIcon(Category c)
+    internal static Icon BrowserIcon(Category c)   // also the Rules tab's
     {
         string own = Machine.ProfileIcon(c.Exe, c.Args);
         if (own != null) try { return new Icon(own, 32, 32); } catch { }

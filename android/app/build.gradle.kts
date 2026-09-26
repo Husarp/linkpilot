@@ -14,8 +14,8 @@ android {
         applicationId = "com.husarp.linkpilot"
         minSdk = 26
         targetSdk = 35
-        versionCode = 14
-        versionName = "0.9.0"
+        versionCode = 16
+        versionName = "0.9.2"
     }
 
     // The release key lives outside the project (never published): its file and passwords are in

@@ -50,6 +50,10 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
@@ -170,23 +174,19 @@ fun AppIcon(pkg: String) {
     if (picture != null) Image(picture, null, Modifier.size(36.dp)) else Spacer(Modifier.size(36.dp))
 }
 
+// A small icon in front of a name, in a line of text - nothing if there is none.
+@Composable
+fun SmallIcon(picture: androidx.compose.ui.graphics.ImageBitmap?) {
+    if (picture == null) return
+    Image(picture, null, Modifier.size(20.dp))
+    Spacer(Modifier.width(6.dp))
+}
+
 // A category's browser icon - with the work badge if it is in the work profile. Kept by the Model.
 @Composable
 fun CategoryIcon(m: Model, c: Category) {
     val picture = remember(c) { m.icon(c) }
     if (picture != null) Image(picture, null, Modifier.size(36.dp)) else Spacer(Modifier.size(36.dp))
-}
-
-@Composable
-fun CategoryPicker(names: List<String>, chosen: String?, choose: (String) -> Unit) {
-    Column {
-        names.forEach { n ->
-            Row(Modifier.fillMaxWidth().clickable { choose(n) }, verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = n == chosen, onClick = { choose(n) })
-                Text(n)
-            }
-        }
-    }
 }
 
 private val cardItem @Composable get() = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
@@ -513,13 +513,21 @@ fun RulesTab(m: Model) {
                 HorizontalDivider()
                 if (rules.isEmpty()) Text("No rules yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 rules.forEachIndexed { i, r ->
-                    val gone = cats.none { it.name.equals(r.category, ignoreCase = true) }
+                    val target = cats.firstOrNull { it.name.equals(r.category, ignoreCase = true) }
                     ListItem(
                         colors = cardItem,
                         leadingContent = { Switch(checked = r.on, onCheckedChange = { on ->
                             store.rules = rules.toMutableList().also { it[i] = r.copy(on = on) }; m.changed() }) },
-                        headlineContent = { Text(if (r.byApp) "From ${r.shown}" else r.shown) },
-                        supportingContent = { Text("→ ${r.category}" + if (gone) "  (category gone - skipped)" else "") },
+                        // the app's icon (app rules), and the icon of the browser its links open in
+                        headlineContent = { Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (r.byApp) SmallIcon(remember(r.match, r.profile) { m.appIcon(Profiles.appKey(r.match, r.profile)) })
+                            Text(if (r.byApp) "From ${r.shown}" else r.shown)
+                        } },
+                        supportingContent = { Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("→ ")
+                            if (target != null) SmallIcon(remember(target) { m.icon(target) })
+                            Text(r.category + if (target == null) "  (category gone - skipped)" else "")
+                        } },
                         trailingContent = {
                             IconButton(onClick = { store.rules = rules.filterIndexed { j, _ -> j != i }; m.changed() }) {
                                 Icon(Icons.Default.Delete, "Remove")
@@ -545,33 +553,41 @@ fun AddRuleDialog(m: Model, byApp: Boolean, close: () -> Unit) {
     var address by remember { mutableStateOf("") }
     var app by remember { mutableStateOf<Browsers.App?>(null) }
     var search by remember { mutableStateOf("") }
+    // Both profiles' apps, with their names and icons, were read by the Model when the app started
+    // (away from the screen) - so the list opens at once, and only the rows on screen are drawn.
+    val all = m.ruleApps
     val recent = remember { store.recentApps.map { key -> Profiles.splitKey(key).let { (pkg, p) -> Browsers.App(pkg, m.appLabel(key), p) } } }
-    // this profile's apps, then the work profile's - their links come here through LinkPilot over there
-    val work = remember { Profiles.others(ctx).flatMap { Profiles.apps(ctx, it) }.map { Browsers.App(it.pkg, it.label + " (work)", it.profile) } }
-    val apps = remember { Browsers.apps(ctx) + work }
+    fun key(a: Browsers.App) = Profiles.appKey(a.pkg, a.profile)
     fun same(a: Browsers.App, b: Browsers.App?) = b != null && a.pkg == b.pkg && a.profile == b.profile
 
+    // For an app rule the window is tall, and the app list takes all of it but the search box, one
+    // line of hint and the one-line category choice.
+    val tall = (LocalConfiguration.current.screenHeightDp * 0.65f).dp
     AlertDialog(
         onDismissRequest = close,
         title = { Text(if (byApp) "Links from an app" else "Links to an address") },
         text = {
-            Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState())) {
+            Column(if (byApp) Modifier.height(tall) else Modifier) {
                 if (byApp) {
                     OutlinedTextField(value = search, onValueChange = { search = it }, label = { Text("Find an app") }, singleLine = true)
-                    val shown = (if (search.isBlank()) recent else emptyList()) +
-                                apps.filter { a -> search.isBlank() || a.label.contains(search.trim(), ignoreCase = true) }
-                                    .filter { a -> search.isNotBlank() || recent.none { same(it, a) } }
-                    if (recent.isNotEmpty() && search.isBlank()) Text("Opened links lately first", style = MaterialTheme.typography.bodySmall)
-                    if (work.isNotEmpty()) Text("Apps marked (work) are in the work profile: their links come here when " +
-                        "LinkPilot there is that profile's default browser.", style = MaterialTheme.typography.bodySmall)
-                    shown.take(120).forEach { a ->
-                        Row(Modifier.fillMaxWidth().clickable { app = a }, verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = same(a, app), onClick = { app = a })
-                            if (a.profile == null) AppIcon(a.pkg) else {
-                                val icon = remember(a.pkg) { m.appIcon(Profiles.appKey(a.pkg, a.profile)) }
-                                if (icon != null) Image(icon, null, Modifier.size(36.dp)) else Spacer(Modifier.size(36.dp))
+                    val hints = listOfNotNull(if (recent.isNotEmpty() && search.isBlank()) "opened links lately first" else null,
+                                              if (all?.any { it.profile != null } == true) "(work): in the work profile" else null)
+                    if (hints.isNotEmpty()) Text(hints.joinToString(" · ").replaceFirstChar { it.uppercase() },
+                                                 style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
+                    if (all == null) Text("Reading your apps...", modifier = Modifier.padding(vertical = 12.dp).weight(1f))
+                    else {
+                        val shown = (if (search.isBlank()) recent else emptyList()) +
+                                    all.filter { a -> search.isBlank() || a.label.contains(search.trim(), ignoreCase = true) }
+                                        .filter { a -> search.isNotBlank() || recent.none { same(it, a) } }
+                        LazyColumn(Modifier.weight(1f)) {
+                            items(shown, key = { key(it) }) { a ->
+                                Row(Modifier.fillMaxWidth().clickable { app = a }, verticalAlignment = Alignment.CenterVertically) {
+                                    RadioButton(selected = same(a, app), onClick = { app = a })
+                                    val icon = remember(key(a)) { m.appIcon(key(a)) }
+                                    if (icon != null) Image(icon, null, Modifier.size(36.dp)) else Spacer(Modifier.size(36.dp))
+                                    Spacer(Modifier.width(8.dp)); Text(a.label)
+                                }
                             }
-                            Spacer(Modifier.width(8.dp)); Text(a.label)
                         }
                     }
                 } else {
@@ -580,8 +596,7 @@ fun AddRuleDialog(m: Model, byApp: Boolean, close: () -> Unit) {
                                       supportingText = { Text("Also every site under it. With a / it is looked for anywhere in the link.") })
                 }
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                Text("Open them in", style = MaterialTheme.typography.titleMedium)
-                CategoryPicker(names, category) { category = it }
+                CategoryChoice(m, category) { category = it }
             }
         },
         confirmButton = {
@@ -593,6 +608,31 @@ fun AddRuleDialog(m: Model, byApp: Boolean, close: () -> Unit) {
             }) { Text("Add") }
         },
         dismissButton = { TextButton(onClick = close) { Text("Cancel") } })
+}
+
+// "Open them in  [Brave ▾]" - one line, so the list above it keeps the room; tap it for the categories,
+// each with its browser's icon.
+@Composable
+fun CategoryChoice(m: Model, chosen: String?, choose: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val cats = m.store.categories
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Open them in", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.width(12.dp))
+        Box {
+            OutlinedButton(onClick = { open = true }) {
+                cats.firstOrNull { it.name == chosen }?.let { SmallIcon(remember(it) { m.icon(it) }) }
+                Text((chosen ?: "Choose") + "  ▾")
+            }
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                cats.forEach { c ->
+                    DropdownMenuItem(text = { Text(c.name) }, onClick = { choose(c.name); open = false },
+                                     leadingIcon = { val icon = remember(c) { m.icon(c) }
+                                                     if (icon != null) Image(icon, null, Modifier.size(24.dp)) })
+                }
+            }
+        }
+    }
 }
 
 // ---- Cleaning: opened links, copied links, try a link, what gets removed -------------------------
@@ -769,6 +809,7 @@ fun LogTab(m: Model) {
     var open by rememberSaveable { mutableStateOf<String?>(null) }   // the link shown in full, by its place in the log
     var clearing by remember { mutableStateOf(false) }
     val days = remember(entries) { entries.withIndex().groupBy { it.value.time.take(10) } }   // newest first, as read
+    val cats = remember(m.tick) { store.categories }   // for the icon of the browser each link went to
 
     // Only the rows on screen are drawn, and names and icons were looked up by the Model beforehand,
     // so the newest 300 scroll as smoothly as a few.
@@ -789,7 +830,7 @@ fun LogTab(m: Model) {
             }
             items(list, key = { "link ${it.index}" }) { (index, e) ->
                 val id = "$index ${e.time} ${e.opened}"
-                LogRow(m, e, open == id) { open = if (open == id) null else id }
+                LogRow(m, e, cats, open == id) { open = if (open == id) null else id }
             }
         }
     }
@@ -815,7 +856,7 @@ private fun dayName(day: String): String {
 
 // One link: the app it came from, the site, the time, where it went - and, opened, all of it.
 @Composable
-fun LogRow(m: Model, e: LogEntry, expanded: Boolean, toggle: () -> Unit) {
+fun LogRow(m: Model, e: LogEntry, cats: List<Category>, expanded: Boolean, toggle: () -> Unit) {
     val ctx = LocalContext.current
     val copied = e.openedIn == "(copied)"
     val site = remember(e.opened) { Cleaner.hostOf(e.opened)?.removePrefix("www.") ?: e.opened }
@@ -839,6 +880,8 @@ fun LogRow(m: Model, e: LogEntry, expanded: Boolean, toggle: () -> Unit) {
                 Text(e.time.drop(11), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                val browser = remember(e.openedIn, cats) { cats.firstOrNull { it.name == e.openedIn }?.let { m.icon(it) } }
+                if (!copied && browser != null) Image(browser, null, Modifier.size(20.dp))
                 Tag(if (copied) "Copied" else "→ ${e.openedIn}", MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer)
                 if (e.changes.isNotEmpty()) Tag("Cleaned", MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer)
                 Text("from $from", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,

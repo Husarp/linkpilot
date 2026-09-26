@@ -11,8 +11,12 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 static class Router
 {
@@ -122,6 +126,79 @@ static class Router
     }
 }
 
+// Where an app's program file is, from its file name alone ("Signal.exe") - for its icon on the Rules
+// tab. Asked in turn: Windows' list of installed programs (App Paths), the programs running now, and
+// the Start menu's shortcuts (read once). Null if none knows it; the rule then shows no icon.
+static class AppIcons
+{
+    static Dictionary<string, string> shortcuts;   // program file name -> where it is
+    static readonly object gate = new object();
+
+    public static string PathOf(string exe)
+    {
+        if (exe.Length == 0) return null;
+        return FromAppPaths(exe) ?? FromRunning(exe) ?? FromShortcuts(exe);
+    }
+
+    static string FromAppPaths(string exe)
+    {
+        foreach (var root in new[] { Registry.CurrentUser, Registry.LocalMachine })
+            try
+            {
+                using (var key = root.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\" + exe))
+                {
+                    if (key == null) continue;
+                    string path = ((key.GetValue("") as string) ?? "").Trim().Trim('"');
+                    if (File.Exists(path)) return path;
+                }
+            }
+            catch { }
+        return null;
+    }
+
+    static string FromRunning(string exe)
+    {
+        foreach (var p in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(exe)))
+            try { using (p) { string path = p.MainModule.FileName; if (File.Exists(path)) return path; } }
+            catch { }
+        return null;
+    }
+
+    static string FromShortcuts(string exe)
+    {
+        lock (gate)
+        {
+            if (shortcuts == null)
+            {
+                shortcuts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                try
+                {
+                    object shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell"));
+                    foreach (var folder in new[] { Environment.SpecialFolder.StartMenu, Environment.SpecialFolder.CommonStartMenu })
+                    {
+                        string[] links;
+                        try { links = Directory.GetFiles(Environment.GetFolderPath(folder), "*.lnk", SearchOption.AllDirectories); }
+                        catch { continue; }
+                        foreach (string link in links)
+                            try
+                            {
+                                object sc = shell.GetType().InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell, new object[] { link });
+                                string target = (string)sc.GetType().InvokeMember("TargetPath", BindingFlags.GetProperty, null, sc, null);
+                                if (!string.IsNullOrEmpty(target) && target.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
+                                    !shortcuts.ContainsKey(Path.GetFileName(target)) && File.Exists(target))
+                                    shortcuts[Path.GetFileName(target)] = target;
+                            }
+                            catch { }
+                    }
+                }
+                catch { }
+            }
+            string found;
+            return shortcuts.TryGetValue(exe, out found) ? found : null;
+        }
+    }
+}
+
 // Popular apps and the program files they run as, so rules can be set up before an app has ever
 // opened a link. File names are those of each app's usual Windows install; if one does not match,
 // "Opened links lately" in the app list shows what really opened the link.
@@ -225,12 +302,26 @@ class RulesPage : UserControl
     readonly Label empty = new Label { Text = "No rules yet.\nAdd apps or addresses with the buttons on the right.",
                                        TextAlign = ContentAlignment.MiddleCenter, ForeColor = SystemColors.GrayText, BackColor = SystemColors.Window };
     bool filling, doubleClick;
+    // The app's icon in front of an app rule, the browser's (as that profile shows it) in front of
+    // where it goes. App icons are looked for away from the screen (AppIcons) and appear when found.
+    readonly ImageList icons = new ImageList { ImageSize = new Size(16, 16), ColorDepth = ColorDepth.Depth32Bit };
+    readonly HashSet<string> looked = new HashSet<string>(StringComparer.OrdinalIgnoreCase);   // apps already looked for
+    readonly SynchronizationContext ui;
+
+    [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, ref LVITEM lParam);
+    [StructLayout(LayoutKind.Sequential)] struct LVITEM
+    {
+        public uint mask; public int iItem, iSubItem; public uint state, stateMask; public IntPtr pszText; public int cchTextMax, iImage;
+        public IntPtr lParam; public int iIndent, iGroupId; public uint cColumns; public IntPtr puColumns, piColFmt; public int iGroup;
+    }
 
     static bool Same(string a, string b) { return string.Equals(a, b, StringComparison.OrdinalIgnoreCase); }
 
     public RulesPage(Action save)
     {
         this.save = save;
+        ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
         Font = new Font("Segoe UI", 9F);
         Dock = DockStyle.Fill;
         Padding = new Padding(4);
@@ -265,6 +356,9 @@ class RulesPage : UserControl
         list.ItemCheck += (s, e) => { if (doubleClick) e.NewValue = e.CurrentValue; };
         list.Controls.Add(empty);
         list.Resize += delegate { empty.SetBounds(0, 40, list.ClientSize.Width, 60); list.Columns[2].Width = -2; };
+        list.SmallImageList = icons;
+        // just after: while its window is being made, the list's rows are not there yet
+        list.HandleCreated += delegate { list.BeginInvoke((MethodInvoker)ProfileImages); };
 
         var side = new FlowLayoutPanel { Dock = DockStyle.Right, Width = 150, FlowDirection = FlowDirection.TopDown, Padding = new Padding(8, 4, 4, 4) };
         side.Controls.Add(SideButton("Add apps…", delegate { AddApps(); }));
@@ -301,12 +395,70 @@ class RulesPage : UserControl
             item.SubItems.Add(r.ByApp ? "" : r.Label);
             bool known = Config.Categories.Any(c => Same(c.Name, r.Category));
             item.SubItems.Add(known ? r.Category : r.Category + "  (no such category - skipped)");
+            if (r.ByApp)
+            {
+                if (icons.Images.ContainsKey("app:" + r.Match)) item.ImageKey = "app:" + r.Match;
+                else LookFor(r.Match);
+            }
             list.Items.Add(item);
         }
         list.EndUpdate();
+        ProfileImages();
         empty.Visible = Config.Rules.Count == 0;
         if (select >= 0 && select < list.Items.Count) { list.Items[select].Selected = true; list.Items[select].EnsureVisible(); }
         filling = false;
+    }
+
+    // An app's icon, looked for on another thread (finding the program can take a moment); the list is
+    // filled again when it is found. match: the rule's program files, ";" between.
+    void LookFor(string match)
+    {
+        if (!looked.Add(match)) return;
+        ThreadPool.QueueUserWorkItem(delegate
+        {
+            Bitmap picture = null;
+            foreach (string exe in match.Split(';'))
+            {
+                string path = AppIcons.PathOf(exe.Trim());
+                if (path == null) continue;
+                try { using (var icon = Icon.ExtractAssociatedIcon(path)) picture = icon.ToBitmap(); break; } catch { }
+            }
+            if (picture != null) ui.Post(delegate
+            {
+                if (IsDisposed) return;
+                if (!icons.Images.ContainsKey("app:" + match)) icons.Images.Add("app:" + match, picture);
+                Fill();
+            }, null);
+        });
+    }
+
+    // The browser profile's icon in the "Goes to profile" column. A ListView shows pictures in later
+    // columns only when asked to (LVS_EX_SUBITEMIMAGES), and each one is set on its own.
+    void ProfileImages()
+    {
+        if (!list.IsHandleCreated || list.IsDisposed) return;
+        SendMessage(list.Handle, 0x1036, (IntPtr)0x2, (IntPtr)0x2);   // LVM_SETEXTENDEDLISTVIEWSTYLE, LVS_EX_SUBITEMIMAGES
+        for (int i = 0; i < list.Items.Count; i++)
+        {
+            var r = list.Items[i] == null ? null : list.Items[i].Tag as Rule;
+            if (r == null) continue;
+            var none = new LVITEM { mask = 0x2, iItem = i, iSubItem = 1, iImage = -1 };   // LVIF_IMAGE; none for the address
+            SendMessage(list.Handle, 0x104C, IntPtr.Zero, ref none);                    // LVM_SETITEMW
+            var to = new LVITEM { mask = 0x2, iItem = i, iSubItem = 2, iImage = ProfileImage(r.Category) };
+            SendMessage(list.Handle, 0x104C, IntPtr.Zero, ref to);
+        }
+    }
+
+    int ProfileImage(string category)
+    {
+        string key = "to:" + category;
+        if (!icons.Images.ContainsKey(key))
+        {
+            var c = Config.Categories.FirstOrDefault(x => Same(x.Name, category));
+            if (c == null) return -1;
+            try { using (var icon = Tray.BrowserIcon(c)) icons.Images.Add(key, icon.ToBitmap()); } catch { return -1; }
+        }
+        return icons.Images.IndexOfKey(key);
     }
 
     void Remove()

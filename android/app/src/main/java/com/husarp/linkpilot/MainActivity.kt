@@ -123,7 +123,20 @@ class Model(val app: Context) {
             val entries = store.readLog()
             entries.map { it.from }.distinct().forEach { if (it.isNotEmpty()) { appLabel(it); appIcon(it) } }
             main.post { isDefault = isDef; currentDefault = other; installed = there; log = entries }
+            if (ruleApps == null && !readingApps) readApps()
         }
+    }
+
+    // Every app of both profiles, for "Links from an app" - with names and icons - read once, after
+    // the first look-ups, so that list opens at once. (A new app shows after LinkPilot restarts.)
+    var ruleApps by mutableStateOf<List<Browsers.App>?>(null); private set
+    @Volatile private var readingApps = false
+    private fun readApps() {
+        readingApps = true
+        val work = Profiles.others(app).flatMap { Profiles.apps(app, it) }.map { Browsers.App(it.pkg, it.label + " (work)", it.profile) }
+        val all = Browsers.apps(app) + work
+        (all.map { Profiles.appKey(it.pkg, it.profile) } + store.recentApps).distinct().forEach { appLabel(it); appIcon(it) }
+        main.post { ruleApps = all }
     }
 
     private fun key(c: Category) = c.pkg + "|" + (c.profile ?: "")
