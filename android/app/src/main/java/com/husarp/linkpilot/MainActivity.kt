@@ -166,6 +166,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         model = Model(applicationContext)
+        if (savedInstanceState == null) Updates.onAppStart(this)   // a fresh start - not a rotation or a return
         makeFirstCategory()   // what is slow to look up is read in onResume, which always follows
         setContent { App(model, ::makeDefault, ::openDefaultSettings) }
     }
@@ -173,6 +174,12 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         model.changed()
+        Updates.onResume(this)   // carries on an update waiting on Android, then checks GitHub
+    }
+
+    override fun onPause() {
+        super.onPause()
+        Updates.onPause()
     }
 
     // With no category yet, the browser used until now becomes the first one - live - so links keep
@@ -216,11 +223,13 @@ fun App(m: Model, makeDefault: () -> Unit, openSettings: () -> Unit) {
     MaterialTheme(colorScheme = colors) {
         var setup by rememberSaveable { mutableStateOf(!m.store.setupDone || !m.isDefault) }
         var tab by rememberSaveable { mutableIntStateOf(0) }
+        var guideStart by rememberSaveable { mutableIntStateOf(1) }   // 1: the whole setup; 5: only the short guide
         val tabs = listOf("Home" to Icons.Default.Home, "Shortcuts" to Icons.Default.Star, "Rules" to Icons.Default.List,
                           "Cleaning" to Icons.Default.Build, "Log" to Icons.Default.DateRange)
         if (setup) Scaffold { pad ->
             Column(Modifier.padding(pad)) {
-                SetupScreen(m, makeDefault, openSettings) { m.store.setupDone = true; setup = false; m.changed() }
+                val done = { m.store.setupDone = true; setup = false; m.changed() }
+                SetupScreen(m, makeDefault, openSettings, guideStart, done) { i -> tab = i; done() }
             }
         } else Scaffold(bottomBar = {
             NavigationBar {
@@ -231,7 +240,8 @@ fun App(m: Model, makeDefault: () -> Unit, openSettings: () -> Unit) {
         }) { pad ->
             Column(Modifier.padding(pad)) {
                 when (tab) {
-                    0 -> HomeTab(m, makeDefault, openSettings) { setup = true }
+                    0 -> HomeTab(m, makeDefault, openSettings, showSetup = { guideStart = 1; setup = true },
+                                 showGuide = { guideStart = 5; setup = true })
                     1 -> ShortcutsTab(m)
                     2 -> RulesTab(m)
                     3 -> CleaningTab(m)

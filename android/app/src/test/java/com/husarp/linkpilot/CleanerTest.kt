@@ -49,6 +49,40 @@ class CleanerTest {
     @Test fun etsyListing() = assertEquals("https://www.etsy.com/listing/123/mug",
         clean("https://www.etsy.com/listing/123/mug?click_key=a&click_sum=b&ref=hp_rv&ga_order=most_relevant"))
     @Test fun shopPartsElsewhereKept() = assertEquals("https://example.com/?sk=1&ref=x", clean("https://example.com/?sk=1&ref=x"))
+    @Test fun aliExpressSearchResult() = assertEquals("https://pl.aliexpress.com/item/1005007956595041.html",
+        clean("https://pl.aliexpress.com/item/1005007956595041.html?curPageLogUid=DKXRIswVvOxB&utparam-url=scene%3Asearch%7Cquery_from%3A%7Cx_object_id%3A1005007956595041%7C_p_origin_prod%3A"))
+    @Test fun aliExpressWhatWasChanged() = assertEquals("removed curPageLogUid, utparam-url",
+        Cleaner.apply("https://pl.aliexpress.com/item/1.html?curPageLogUid=D&utparam-url=s", on).changes)
+    @Test fun amazonTagAndAdsGoVariantKept() = assertEquals("https://www.amazon.com/dp/B0ABC?th=1&psc=1",
+        clean("https://www.amazon.com/dp/B0ABC?tag=site-20&th=1&ref=as_li&hvadid=5&asc_campaign=c&psc=1&cv_ct_cx=x"))
+    @Test fun googleSearchQueryKept() = assertEquals("https://www.google.com/search?q=cats&ie=UTF-8",
+        clean("https://www.google.com/search?q=cats&oq=cat&gs_lcrp=EgZ&sourceid=chrome&ie=UTF-8&ved=2ahU&ei=k3x&sca_esv=1"))
+    @Test fun googleAdLink() = assertEquals("https://shop.example/p",
+        clean("https://www.google.com/aclk?sa=l&ai=DChc&adurl=https%3A%2F%2Fshop.example%2Fp%3Fgad_source%3D1"))
+    @Test fun googleAdLinkWithoutAddressLeftAlone() = assertEquals("https://www.google.com/aclk?sa=l&ai=DChc&adurl=",
+        clean("https://www.google.com/aclk?sa=l&ai=DChc&adurl="))
+    @Test fun globalAdditions() = assertEquals("https://shop.example/p?id=3",
+        clean("https://shop.example/p?srsltid=AfmB&id=3&_gl=1*abc&_ga=2.1&mtm_campaign=x&__hstc=1&irclickid=z&ysclid=q"))
+    @Test fun shortNamesOnlyOnTheirSite() = assertEquals("https://example.com/?s=1&t=2&tag=x&ref=y&is=1&trk=a",
+        clean("https://example.com/?s=1&t=2&tag=x&ref=y&is=1&trk=a"))
+    @Test fun xShareLink() = assertEquals("https://x.com/u/status/1", clean("https://x.com/u/status/1?s=46&t=AbC"))
+    @Test fun facebookPhotoAlbumKept() = assertEquals("https://www.facebook.com/photo/?fbid=1&set=a.2",
+        clean("https://www.facebook.com/photo/?fbid=1&set=a.2&__cft__%5B0%5D=AZ&__tn__=EH-R&mibextid=Zb"))
+    @Test fun tiktokShareLink() = assertEquals("https://www.tiktok.com/@u/video/123",
+        clean("https://www.tiktok.com/@u/video/123?_t=8x&_r=1&is_from_webapp=1&sender_device=pc&share_app_id=1233"))
+    @Test fun redditShareLink() = assertEquals("https://www.reddit.com/r/x/comments/abc/t/?context=3",
+        clean("https://www.reddit.com/r/x/comments/abc/t/?share_id=z&%24deep_link=true&context=3&utm_name=web&ref=share&rdt=1"))
+    @Test fun linkedInJob() = assertEquals("https://www.linkedin.com/jobs/view/123/",
+        clean("https://www.linkedin.com/jobs/view/123/?trk=x&refId=y&trackingId=z&eBP=e&alternateChannel=search"))
+    @Test fun ebayShareLink() = assertEquals("https://www.ebay.de/itm/1234?var=7",
+        clean("https://www.ebay.de/itm/1234?var=7&mkgroupid=1&ssspo=a&sssrc=2&ssuid=u&widget_ver=artemis&itmmeta=01H"))
+    @Test fun temuShareLinkNewParts() = assertEquals("https://www.temu.com/goods.html?goods_id=601099",
+        clean("https://www.temu.com/goods.html?goods_id=601099&refer_share_id=a&refer_share_channel=copy&from_share=1"))
+    @Test fun wikipediaShare() = assertEquals("https://en.wikipedia.org/wiki/Link", clean("https://en.wikipedia.org/wiki/Link?wprov=sfla1"))
+    @Test fun affiliateLink() = assertEquals("https://www.example.com/p",
+        clean("https://click.linksynergy.com/deeplink?id=x&mid=1&murl=https%3A%2F%2Fwww.example.com%2Fp"))
+    @Test fun ebayRover() = assertEquals("https://www.ebay.com/itm/123",
+        clean("https://rover.ebay.com/rover/1/711-53200-19255-0/1?mpre=https%3A%2F%2Fwww.ebay.com%2Fitm%2F123&campid=5"))
     @Test fun notAWebLinkUntouched() = assertEquals("content://x/page.htm?utm_source=x", clean("content://x/page.htm?utm_source=x"))
 
     @Test fun siSwitchedOff() = assertEquals("https://youtu.be/x?si=abc",

@@ -28,6 +28,8 @@ partial class SwitchForm : Form
     SplitContainer split;
     bool keysPaused;           // the dock's shortcuts are let go while the Shortcuts tab is open
     Control warning;           // the yellow "not switched on yet" strip
+    UpdateBanner banner;       // a newer version waits (Updater.cs) - not on the setup screen
+    Panel noCategories;        // over the list while there are none
     CheckBox inDock;
     PictureBox iconPreview;
     bool filling;              // true while controls are being set to match the settings, not by you
@@ -45,7 +47,11 @@ partial class SwitchForm : Form
         Text = "LinkPilot";
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         ShowInTaskbar = Config.TaskbarButton;   // a taskbar button while open, unless set to live in the dock only
-        Activated += delegate { CheckDefault(); };   // Settings may have changed the default browser meanwhile
+        Activated += delegate
+        {
+            CheckDefault();                       // Settings may have changed the default browser meanwhile
+            if (CameBack != null) CameBack();     // the dock asks GitHub, at most every 5 minutes
+        };
         Size = new Size(860, 640);
         MinimumSize = new Size(700, 500);
         StartPosition = FormStartPosition.CenterScreen;
@@ -54,19 +60,28 @@ partial class SwitchForm : Form
         // Minimum sizes and the splitter position are set further down, once this is inside the form.
         // A SplitContainer is 150px wide until it is docked, and setting them here throws.
         split = new SplitContainer { Dock = DockStyle.Fill };
-        split.Panel1.Padding = new Padding(10, 6, 6, 8);
-        split.Panel2.Padding = new Padding(6, 6, 10, 8);
+        split.Panel1.Padding = new Padding(0, 0, 6, 0);
+        split.Panel2.Padding = new Padding(6, 0, 0, 0);
 
         // ---- left: the categories ----
-        categoryList = new ListBox { Dock = DockStyle.Fill, IntegralHeight = false, DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 42 };
+        categoryList = new ListBox { Dock = DockStyle.Fill, IntegralHeight = false, DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 48 };
         categoryList.DrawItem += DrawRow;
         categoryList.SelectedIndexChanged += delegate { UpdateButtons(); };
         categoryList.DoubleClick += delegate { SwitchTo(Selected()); };
 
-        var leftButtons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 36, Padding = new Padding(0, 4, 0, 0) };
+        // with none yet, the list says how to start
+        var newFirst = Ui.Primary("New category", true);
+        newFirst.Click += delegate { NewCategory(); };
+        noCategories = Ui.Empty("No categories yet", "Pick a browser profile and give it a name - Work, Home.", newFirst);
+        noCategories.Dock = DockStyle.Fill;
+        noCategories.BorderStyle = BorderStyle.FixedSingle;
+        noCategories.Visible = false;
+
+        var leftButtons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 38, Padding = new Padding(0, 4, 0, 0) };
         var add = Button_("New category", delegate { NewCategory(); });
         rename = Button_("Rename", delegate { RenameCategory(); });
         remove = Button_("Delete", delegate { DeleteCategory(); });
+        remove.Margin = new Padding(24, 3, 3, 3);   // set apart: it cannot be undone
         leftButtons.Controls.AddRange(new Control[] { add, rename, remove });
 
         // pin the selected category to the dock, and choose the icon it shows there
@@ -77,8 +92,7 @@ partial class SwitchForm : Form
         var dockRow = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 36, Padding = new Padding(0, 2, 0, 0), WrapContents = false };
         dockRow.Controls.AddRange(new Control[] { inDock, iconButton, iconPreview });
 
-        split.Panel1.Controls.Add(categoryList);
-        split.Panel1.Controls.Add(Ui.Section("Categories", new TabHelp("The Categories tab",
+        var help = new TabHelp("The Categories tab",
             "# Categories",
             "A category: a name - Work, Home - with a browser and profile. Links open in the live one (LIVE).",
             "Set one up: select it, pick a profile on the right, press Use this.",
@@ -87,8 +101,13 @@ partial class SwitchForm : Form
             "Listed: every browser on this PC with its profiles, named as you named them.",
             "# Show in dock",
             "In the dock: its own icon next to the clock - one click switches. Dock icon… picks the look.",
+            "# Ask every time",
+            "Pick it on the right, under the browsers, for a category: each link then asks which category to open in.",
             "# The yellow strip",
-            "Not switched on yet: LinkPilot is not your default browser, so links skip it. Set it up shows where.")));
+            "Not switched on yet: LinkPilot is not your default browser, so links skip it. Set it up shows where.");
+        split.Panel1.Controls.Add(noCategories);    // first in, so docked last: the room left over
+        split.Panel1.Controls.Add(categoryList);
+        split.Panel1.Controls.Add(Ui.Section("Your categories"));
         split.Panel1.Controls.Add(leftButtons);
         split.Panel1.Controls.Add(dockRow);
 
@@ -99,22 +118,24 @@ partial class SwitchForm : Form
         browserTree.DoubleClick += delegate { Assign(); };
 
         assign = Button_("Use this for the selected category", delegate { Assign(); });
-        var rightButtons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 36, Padding = new Padding(0, 4, 0, 0) };
+        var rightButtons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 38, Padding = new Padding(0, 4, 0, 0) };
         rightButtons.Controls.Add(assign);
 
         split.Panel2.Controls.Add(browserTree);
-        split.Panel2.Controls.Add(Ui.Section("Browsers and profiles"));
+        split.Panel2.Controls.Add(Ui.Section("Browsers and profiles on this PC"));
         split.Panel2.Controls.Add(rightButtons);
 
         // ---- bottom: one button per category, and the extra settings ----
         var bottom = new Panel { Dock = DockStyle.Bottom, Height = 54, BackColor = Ui.Bar };
         switchRow = new FlowLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(10, 10, 4, 8), WrapContents = false, AutoScroll = true };
         bottom.Controls.Add(switchRow);
+        bottom.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 1, BackColor = Ui.Line });
 
         // ---- the tabs: Categories holds the two panels above; the others are built when opened ----
         tabs = new TabControl { Dock = DockStyle.Fill, Padding = new Point(14, 5) };
-        categoriesPage = new TabPage("Categories") { UseVisualStyleBackColor = true };
+        categoriesPage = new TabPage("Categories") { UseVisualStyleBackColor = true, Padding = Ui.PagePadding };
         categoriesPage.Controls.Add(split);
+        categoriesPage.Controls.Add(Ui.PageHeader("Categories", "Each category is a browser and profile. Links open in the live one.", help));
         rulesPage = new TabPage("Rules") { UseVisualStyleBackColor = true };
         shortcutsPage = new TabPage("Shortcuts") { UseVisualStyleBackColor = true };
         cleaningPage = new TabPage("Link cleaning") { UseVisualStyleBackColor = true };
@@ -137,7 +158,9 @@ partial class SwitchForm : Form
 
         var top = Header();
         warning = NotDefaultWarning();
+        banner = new UpdateBanner();
         Controls.Add(tabs);
+        Controls.Add(banner);   // under the header, over the tabs
         Controls.Add(top);
         Controls.Add(warning);
         Controls.Add(bottom);
@@ -157,9 +180,15 @@ partial class SwitchForm : Form
         Reload();
         if (!IsDefaultBrowser || !Config.SetupDone) ShowSetup();
         Shown += delegate { BuildTheRestQuietly(); };
+        // the update banner follows the updater, and the window and the setup screen coming and going
+        Action updated = ShowBanner;
+        Updater.Changed += updated;
+        Disposed += delegate { Updater.Changed -= updated; };
+        VisibleChanged += delegate { ShowBanner(); };
     }
 
     public Action ClosedByYou;   // the dock says where LinkPilot keeps running, the first time
+    public Action CameBack;      // the window was shown or came to the front
     bool quitting, quietStarted;
 
     public void Quit() { quitting = true; Close(); }
@@ -278,21 +307,33 @@ partial class SwitchForm : Form
     // to the front: the yellow strip and the top line follow.
     void CheckDefault()
     {
+        ShowBanner();
         if (setup != null && setup.Visible) return;
         if (warning != null) warning.Visible = !IsDefaultBrowser;
         ShowHeader();
     }
 
+    // The update banner: while a newer version waits, unless closed with ✕ or the setup screen shows.
+    // Followed while the window is on screen; Visible says nothing about it while it is hidden.
+    void ShowBanner()
+    {
+        if (banner == null || !Visible) return;
+        banner.Visible = Updater.UpdateWaiting && !Updater.BannerClosed && !(setup != null && setup.Visible);
+        if (banner.Visible) banner.Fill();
+    }
+
     Control NotDefaultWarning()
     {
-        var strip = new Panel { Dock = DockStyle.Top, Height = 46, BackColor = Color.FromArgb(255, 244, 206), Visible = !IsDefaultBrowser };
-        strip.Padding = new Padding(10, 8, 12, 8);
+        var strip = new Panel { Dock = DockStyle.Top, Height = 46, BackColor = Ui.WarnBack, Visible = !IsDefaultBrowser };
+        strip.Padding = new Padding(10, 9, 12, 9);
         var say = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
-        say.Controls.Add(new Label { AutoSize = true, ForeColor = Color.FromArgb(90, 60, 0), Font = new Font(Font, FontStyle.Bold),
+        say.Controls.Add(new Label { AutoSize = true, ForeColor = Ui.Warn, Font = new Font(Font, FontStyle.Bold),
                                      Margin = new Padding(3, 6, 0, 0),
                                      Text = "⚠  Not switched on yet - links do not pass through LinkPilot" });
-        var open = new Button { Dock = DockStyle.Right, Width = 170, Text = "Set it up", AutoSize = false };
-        open.Click += delegate { ShowSetup(); };
+        var open = Ui.Button("Set it up", delegate { ShowSetup(); });
+        open.AutoSize = false;
+        open.Dock = DockStyle.Right;
+        open.Width = 170;
         strip.Controls.Add(say);
         strip.Controls.Add(open);
         return strip;
@@ -300,8 +341,9 @@ partial class SwitchForm : Form
 
     // read by --selftest, so the window can be checked without being shown
     public int CategoryCount { get { return categoryList.Items.Count; } }
-    public int BrowserCount { get { return browserTree.Nodes.Count; } }
-    public int ProfileCount { get { int n = 0; foreach (TreeNode t in browserTree.Nodes) n += t.Nodes.Count; return n; } }
+    public int BrowserCount { get { return browserTree.Nodes.Cast<TreeNode>().Count(t => !IsAskNode(t)); } }
+    public int ProfileCount { get { int n = 0; foreach (TreeNode t in browserTree.Nodes) if (!IsAskNode(t)) n += t.Nodes.Count; return n; } }
+    static bool IsAskNode(TreeNode t) { var b = t.Tag as Browser; return b != null && b.Exe == Category.AskExe; }
     public int SwitchButtonCount { get { return switchRow.Controls.OfType<Button>().Count(); } }
     public string TabNames { get { return string.Join(", ", tabs.TabPages.Cast<TabPage>().Select(p => p.Text)); } }
 
@@ -319,6 +361,16 @@ partial class SwitchForm : Form
     // one at a time, just after the window appears, so opening one is instant.
     readonly Dictionary<TabPage, string> builtFor = new Dictionary<TabPage, string>();   // config.txt as it was then
 
+    // config.txt as the tabs see it: without the live category, the order of recent use and the Ask
+    // window's sort, which no tab shows. Every switch - from the dock, a shortcut, the bottom row -
+    // rewrites the first two lines, and with them every tab was built again the next time it was
+    // opened, which made Rules and Shortcuts slow to open.
+    static readonly string[] NotShown = { "active=", "recent-live=", "ask-sort=" };
+    static string TabsShape()
+    {
+        return string.Join("\n", Config.LastText.Split('\n').Where(l => !NotShown.Any(n => l.StartsWith(n, StringComparison.OrdinalIgnoreCase))));
+    }
+
     void ShowTab()
     {
         PauseKeys(tabs.SelectedTab == shortcutsPage);
@@ -330,18 +382,18 @@ partial class SwitchForm : Form
     void Build(TabPage page)
     {
         string was;
-        if (page == categoriesPage || (builtFor.TryGetValue(page, out was) && was == Config.LastText)) return;
-        Control content = page == rulesPage ? new RulesPage(() => { Save(); Reload(); })
+        if (page == categoriesPage || (builtFor.TryGetValue(page, out was) && was == TabsShape())) return;
+        Control content = page == rulesPage ? new RulesPage(() => { Save(); Reload(); }, () => ShowTabNamed("Categories"))
                         : page == shortcutsPage ? new ShortcutsPage(ShortcutFree, () => { Save(); Reload(); })
                         : page == cleaningPage ? new CleaningPage(Save)
                         : page == logPage ? new LogPage(Save)
-                        : (Control)new AboutPage(Save, ShowSetup);
+                        : (Control)new AboutPage(Save, ShowSetup, ShowGuide);
         page.SuspendLayout();
         foreach (var old in page.Controls.Cast<Control>().ToList()) old.Dispose();
         page.Controls.Add(content);
         page.ResumeLayout();
         Ui.HandCursors(content);
-        builtFor[page] = Config.LastText;
+        builtFor[page] = TabsShape();
     }
 
     // Once the window is up (or prepared unseen): the other tabs, one every 150 ms, so the window
@@ -379,12 +431,7 @@ partial class SwitchForm : Form
     }
     public string HeaderText { get { return (caption.Text + " " + header.Text).Trim(); } }
 
-    static Button Button_(string text, EventHandler onClick)
-    {
-        var b = new Button { Text = text, Height = 26, AutoSize = true, Padding = new Padding(6, 0, 6, 0) };
-        b.Click += onClick;
-        return b;
-    }
+    static Button Button_(string text, EventHandler onClick) { return Ui.Button(text, onClick); }
 
     // ---- filling in -----------------------------------------------------------------------------
 
@@ -396,6 +443,7 @@ partial class SwitchForm : Form
         browserTree.Nodes.Clear();
         treeIcons.Images.Clear();
         using (var bold = new Font(Font, FontStyle.Bold))
+        {
             foreach (var b in browsers)
             {
                 string own = TreeIcon(b.Exe, null);
@@ -410,6 +458,21 @@ partial class SwitchForm : Form
                 browserTree.Nodes.Add(node);
                 node.Expand();
             }
+            // not a browser: Ask every time - a category set to it asks, for each link, which of the
+            // other categories to open it in (Ask.cs)
+            if (browsers.Count > 0)
+            {
+                var ask = new Browser { Name = "Ask every time", Exe = Category.AskExe };
+                ask.Profiles.Add(new Profile { Name = "(a small window asks, for each link)", Args = "" });
+                using (var icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath)) treeIcons.Images.Add(Category.AskExe, icon.ToBitmap());
+                var node = new TreeNode(ask.Name) { Tag = ask, NodeFont = new Font(bold, FontStyle.Bold),
+                                                    ImageKey = Category.AskExe, SelectedImageKey = Category.AskExe };
+                node.Nodes.Add(new TreeNode(ask.Profiles[0].Name) { Tag = new object[] { ask, ask.Profiles[0] }, ForeColor = SystemColors.GrayText,
+                                                                     ImageKey = Category.AskExe, SelectedImageKey = Category.AskExe });
+                browserTree.Nodes.Add(node);
+                node.Expand();
+            }
+        }
         browserTree.EndUpdate();
         if (browsers.Count == 0)
             browserTree.Nodes.Add(new TreeNode("No browsers found - is anything installed?"));
@@ -457,6 +520,8 @@ partial class SwitchForm : Form
         foreach (var c in Config.Categories)
             categoryList.Items.Add(new Row(c, string.Equals(c.Name, Config.Active, StringComparison.OrdinalIgnoreCase)));
         categoryList.EndUpdate();
+        noCategories.Visible = Config.Categories.Count == 0;
+        categoryList.Visible = !noCategories.Visible;
 
         for (int i = 0; i < categoryList.Items.Count; i++)
             if (((Row)categoryList.Items[i]).Cat.Name == keep) categoryList.SelectedIndex = i;
@@ -464,7 +529,14 @@ partial class SwitchForm : Form
 
         ShowHeader();
 
-        foreach (var old in switchRow.Controls.Cast<Control>().ToList()) old.Dispose();
+        // one button per category, with its icon; the live one filled blue. Clicking it only closes
+        // the window, as switching does.
+        foreach (var old in switchRow.Controls.Cast<Control>().ToList())
+        {
+            var was = old as Button;
+            if (was != null && was.Image != null) was.Image.Dispose();
+            old.Dispose();
+        }
         if (Config.Categories.Count > 0)
         {
             switchRow.Controls.Add(new Label { Text = "Switch to:", AutoSize = true, Margin = new Padding(0, 9, 8, 0) });
@@ -472,13 +544,25 @@ partial class SwitchForm : Form
         foreach (var c in Config.Categories)
         {
             var cat = c;
-            var b = new Button { Text = c.Name, Height = 32, AutoSize = true, Padding = new Padding(10, 0, 10, 0) };
+            var b = new Button { Text = c.Name, Height = 32, AutoSize = true, Padding = new Padding(6, 0, 8, 0), Margin = new Padding(0, 0, 6, 0),
+                                 FlatStyle = FlatStyle.Flat, TextImageRelation = TextImageRelation.ImageBeforeText };
+            try { using (var icon = Tray.IconFor(c)) using (var big = icon.ToBitmap()) b.Image = new Bitmap(big, 16, 16); } catch { }
             if (string.Equals(c.Name, Config.Active, StringComparison.OrdinalIgnoreCase))
             {
                 b.Font = new Font(b.Font, FontStyle.Bold);
-                b.Enabled = false;
+                b.BackColor = Ui.Accent;
+                b.ForeColor = Color.White;
+                b.FlatAppearance.BorderSize = 0;
             }
-            b.Click += delegate { SwitchTo(cat); };
+            else
+            {
+                b.BackColor = Color.White;
+                b.FlatAppearance.BorderColor = Color.FromArgb(190, 190, 190);
+                b.FlatAppearance.MouseOverBackColor = Ui.Picked;
+            }
+            // the live one is chosen already - a click only closes the window
+            if (string.Equals(c.Name, Config.Active, StringComparison.OrdinalIgnoreCase)) b.Click += delegate { Close(); };
+            else b.Click += delegate { SwitchTo(cat); };
             switchRow.Controls.Add(b);
         }
         int rules = Config.Rules.Count(r => r.On);
@@ -537,7 +621,8 @@ partial class SwitchForm : Form
             get
             {
                 return (Cat.Shows.Length > 0 ? Cat.Shows : "No browser yet - pick one on the right") +
-                       (Config.ShortcutsOn && Cat.KeyOn && Cat.HotKey.Length > 0 ? "     ·     " + Cat.HotKey : "");
+                       (Config.ShortcutsOn && Cat.KeyOn && Cat.HotKey.Length > 0 ? "  ·  " + Cat.HotKey : "") +
+                       (Cat.InDock ? "  ·  in dock" : "");
             }
         }
         public override string ToString() { return (Live ? "live: " : "") + Cat.Name + " - " + Detail; }   // for screen readers
@@ -552,26 +637,42 @@ partial class SwitchForm : Form
         var r = e.Bounds;
         bool picked = (e.State & DrawItemState.Selected) != 0;
         using (var bg = new SolidBrush(picked ? Ui.Picked : categoryList.BackColor)) g.FillRectangle(bg, r);
-        if (row.Picture != null) g.DrawImage(row.Picture, r.Left + 8, r.Top + (r.Height - 24) / 2, 24, 24);
-        int x = r.Left + 42;
+        // selected: a thin blue edge; live: a blue bar on the left - so the two never look alike
+        if (picked) using (var edge = new Pen(Ui.Accent)) g.DrawRectangle(edge, r.Left, r.Top, r.Width - 1, r.Height - 1);
+        if (row.Live) using (var bar = new SolidBrush(Ui.Accent)) g.FillRectangle(bar, r.Left, r.Top, 3, r.Height);
+        if (row.Picture != null) g.DrawImage(row.Picture, r.Left + 10, r.Top + (r.Height - 28) / 2, 28, 28);
+        int x = r.Left + 48;
         using (var bold = new Font(Font, FontStyle.Bold))
         {
-            TextRenderer.DrawText(g, row.Cat.Name, bold, new Point(x, r.Top + 4), SystemColors.WindowText, TextFormatFlags.NoPrefix);
+            TextRenderer.DrawText(g, row.Cat.Name, bold, new Point(x, r.Top + 6), SystemColors.WindowText, TextFormatFlags.NoPrefix);
             if (row.Live)
             {
                 int w = TextRenderer.MeasureText(g, row.Cat.Name, bold, Size.Empty, TextFormatFlags.NoPrefix).Width;
                 using (var small = new Font(Font.FontFamily, 7.5F, FontStyle.Bold))
                 {
-                    var tag = new Rectangle(x + w + 4, r.Top + 6, TextRenderer.MeasureText("LIVE", small).Width + 6, 15);
-                    using (var fill = new SolidBrush(Ui.Accent)) g.FillRectangle(fill, tag);
+                    var tag = new Rectangle(x + w + 4, r.Top + 8, TextRenderer.MeasureText("LIVE", small).Width + 8, 15);
+                    var smooth = g.SmoothingMode;
+                    g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                    using (var pill = new System.Drawing.Drawing2D.GraphicsPath())
+                    using (var fill = new SolidBrush(Ui.Accent))
+                    {
+                        int d = 6;   // the corners' size
+                        pill.AddArc(tag.Left, tag.Top, d, d, 180, 90);
+                        pill.AddArc(tag.Right - d, tag.Top, d, d, 270, 90);
+                        pill.AddArc(tag.Right - d, tag.Bottom - d, d, d, 0, 90);
+                        pill.AddArc(tag.Left, tag.Bottom - d, d, d, 90, 90);
+                        pill.CloseFigure();
+                        g.FillPath(fill, pill);
+                    }
+                    g.SmoothingMode = smooth;
                     TextRenderer.DrawText(g, "LIVE", small, tag, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
                 }
             }
         }
-        TextRenderer.DrawText(g, row.Detail, Font, new Point(x, r.Top + 22),
-                              row.Cat.Exe.Length > 0 ? SystemColors.GrayText : Color.DarkOrange, TextFormatFlags.NoPrefix);
-        if (e.Index < categoryList.Items.Count - 1)
-            using (var line = new Pen(Color.FromArgb(235, 235, 235))) g.DrawLine(line, r.Left + 8, r.Bottom - 1, r.Right - 8, r.Bottom - 1);
+        TextRenderer.DrawText(g, row.Detail, Font, new Rectangle(x, r.Top + 26, r.Right - x - 6, 18),
+                              row.Cat.Exe.Length > 0 ? SystemColors.GrayText : Ui.Warn, TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+        if (e.Index < categoryList.Items.Count - 1 && !picked)
+            using (var line = new Pen(Ui.Line)) g.DrawLine(line, x, r.Bottom - 1, r.Right - 8, r.Bottom - 1);
         if ((e.State & DrawItemState.Focus) != 0) e.DrawFocusRectangle();
     }
 
@@ -608,7 +709,7 @@ partial class SwitchForm : Form
     void Save()
     {
         Config.Save();
-        if (tabs != null && tabs.SelectedTab != null && builtFor.ContainsKey(tabs.SelectedTab)) builtFor[tabs.SelectedTab] = Config.LastText;
+        if (tabs != null && tabs.SelectedTab != null && builtFor.ContainsKey(tabs.SelectedTab)) builtFor[tabs.SelectedTab] = TabsShape();
         if (Saved != null) Saved();
     }
 
@@ -657,13 +758,22 @@ partial class SwitchForm : Form
         if (Config.Categories.Any(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase)))
         { MessageBox.Show(this, "There is already a category called " + name + "."); return; }
 
-        string key = Config.SuggestKey(name, Config.Categories.Count + 1);
-        Config.Categories.Add(new Category { Name = name, Exe = "", Args = "", Shows = "", HotKey = key, DefaultKey = key });
-        if (Config.Categories.Count == 1) Config.Active = name;
+        AddCategory(name, "", "", "");
         Save();
         Reload();
         for (int i = 0; i < categoryList.Items.Count; i++)
             if (((Row)categoryList.Items[i]).Cat.Name == name) categoryList.SelectedIndex = i;
+    }
+
+    // A new category, with the shortcut suggested for it - live if it is the only one. Not saved yet.
+    // Also used by the guide.
+    static Category AddCategory(string name, string exe, string args, string shows)
+    {
+        string key = Config.SuggestKey(name, Config.Categories.Count + 1);
+        var c = new Category { Name = name, Exe = exe, Args = args, Shows = shows, HotKey = key, DefaultKey = key };
+        Config.Categories.Add(c);
+        if (Config.Categories.Count == 1) Config.Active = name;
+        return c;
     }
 
     void RenameCategory()
@@ -674,6 +784,8 @@ partial class SwitchForm : Form
         if (string.Equals(Config.Active, c.Name, StringComparison.OrdinalIgnoreCase)) Config.Active = name.Trim();
         foreach (var r in Config.Rules.Where(r => string.Equals(r.Category, c.Name, StringComparison.OrdinalIgnoreCase)))
             r.Category = name.Trim();      // rules follow the category to its new name
+        for (int i = 0; i < Config.Recent.Count; i++)   // and so does its place in the smart queue
+            if (string.Equals(Config.Recent[i], c.Name, StringComparison.OrdinalIgnoreCase)) Config.Recent[i] = name.Trim();
         c.Name = name.Trim();
         Save(); Reload();
     }

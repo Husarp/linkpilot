@@ -1,0 +1,104 @@
+# Builds the Windows program on GitHub, with the same C# compiler that is part of Windows (as
+# build.cmd and get.ps1 do). Every push and pull request checks that it builds; a published release
+# also gets LinkPilot-<version>.zip, BrowserSwitch.exe and LinkPilotSetup-<version>.exe attached - the
+# installer that the app's own updater downloads. The Android APK is built and signed on the owner's
+# machine and attached by hand - its key never goes to GitHub.
+name: Windows build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build BrowserSwitch.exe
+        shell: pwsh
+        run: |
+          $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          $files = Get-ChildItem -Path . -Filter *.cs | ForEach-Object { $_.FullName }
+          & $csc /nologo /target:winexe /optimize+ /out:BrowserSwitch.exe /win32icon:BrowserSwitch.ico `
+            /reference:System.Windows.Forms.dll /reference:System.Drawing.dll $files
+          if ($LASTEXITCODE -ne 0) { throw "BUILD FAILED" }
+
+      - name: Make the zip
+        id: zip
+        shell: pwsh
+        run: |
+          $version = (Get-Item BrowserSwitch.exe).VersionInfo.FileVersion -replace '\.0$', ''
+          if ($env:GITHUB_EVENT_NAME -eq 'release' -and "v$version" -ne $env:GITHUB_REF_NAME) {
+            throw "The program says $version but the release is $env:GITHUB_REF_NAME"
+          }
+          $dir = "LinkPilot-$version"
+          New-Item -ItemType Directory $dir | Out-Null
+          Copy-Item BrowserSwitch.exe, Install.cmd, install.ps1, uninstall.ps1, 'Back to normal.cmd', README.md, LICENSE $dir
+          Compress-Archive -Path $dir -DestinationPath "$dir.zip"
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      # The installer: installer\*.cs and Ui.cs, the program files inside it (as build.cmd makes it).
+      # Its version is read from the BrowserSwitch.exe inside, so it cannot say another one.
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          $payload = 'BrowserSwitch.exe', 'install.ps1', 'uninstall.ps1', 'Install.cmd', 'Back to normal.cmd', 'README.md', 'LICENSE'
+          $res = $payload | ForEach-Object { "/resource:$_,$_" }
+          $src = @(Get-ChildItem installer -Filter *.cs | ForEach-Object { $_.FullName }) + 'Ui.cs'
+          & $csc /nologo /target:winexe /optimize+ /platform:anycpu /out:LinkPilotSetup.exe `
+            /win32icon:BrowserSwitch.ico /win32manifest:installer\setup.manifest `
+            /reference:System.Windows.Forms.dll /reference:System.Drawing.dll $res $src
+          if ($LASTEXITCODE -ne 0) { throw "INSTALLER BUILD FAILED" }
+
+      # The installer checked before it is published - only one that passes gets its version in its
+      # name, and only that one is attached below.
+      - name: Check the installer
+        shell: pwsh
+        run: |
+          $p = Start-Process .\LinkPilotSetup.exe '--selftest' -Wait -PassThru
+          Get-Content setup-selftest.txt -ErrorAction SilentlyContinue
+          if ($p.ExitCode -ne 0) { throw "INSTALLER SELF-TEST FAILED" }
+          if ((Get-Content setup-selftest.txt) -notcontains "version: ${{ steps.zip.outputs.version }}") { throw "The installer's version is not the program's" }
+          Rename-Item LinkPilotSetup.exe "LinkPilotSetup-${{ steps.zip.outputs.version }}.exe"
+
+      # The program's own self-test builds its windows - only a warning if it fails on GitHub's
+      # machine, so the release still gets its files.
+      - name: Check the program
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $p = Start-Process .\BrowserSwitch.exe '--selftest' -PassThru
+          if (-not $p.WaitForExit(60000)) { $p.Kill(); throw "BrowserSwitch --selftest did not finish" }
+          if (-not (Test-Path selftest.txt)) { throw "BrowserSwitch --selftest wrote nothing" }
+          Get-Content selftest.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.zip.outcome == 'success'
+        with:
+          name: LinkPilot-${{ steps.zip.outputs.version }}
+          path: |
+            LinkPilot-${{ steps.zip.outputs.version }}.zip
+            BrowserSwitch.exe
+            LinkPilotSetup-${{ steps.zip.outputs.version }}.exe
+
+      # The zip and BrowserSwitch.exe even if the installer's check failed; the installer only if it passed.
+      - name: Attach to the release
+        if: always() && github.event_name == 'release' && steps.zip.outcome == 'success'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $files = @("LinkPilot-${{ steps.zip.outputs.version }}.zip", 'BrowserSwitch.exe')
+          $setup = "LinkPilotSetup-${{ steps.zip.outputs.version }}.exe"
+          if (Test-Path $setup) { $files += $setup } else { Write-Host "::warning::The installer didn't pass its check - not attached" }
+          gh release upload $env:GITHUB_REF_NAME @files --clobber
+          if ($LASTEXITCODE -ne 0) { throw "Couldn't attach the files to the release" }

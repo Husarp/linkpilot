@@ -29,6 +29,10 @@ static class LinkLog
 
     public static string File_ { get { return Path.Combine(Config.Dir, "link-log.txt"); } }
 
+    // Whether a browser got the link - not when it was only copied (Cleaner.cs), nor left unopened
+    // in the Ask every time window.
+    public static bool WentToBrowser(Entry e) { return e.OpenedIn != "(copied)" && e.OpenedIn != "(not opened)"; }
+
     static string Clean(string s) { return (s ?? "").Replace('\t', ' ').Replace('\r', ' ').Replace('\n', ' '); }
 
     // One line per link: time, app, where it opened, why, the link as it came, the link as opened
@@ -95,20 +99,22 @@ class LogPage : UserControl
                                              BorderStyle = BorderStyle.FixedSingle, BackColor = SystemColors.Window, ScrollBars = ScrollBars.Vertical };
     readonly Label count = new Label { AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(12, 8, 0, 0) };
     readonly Button copy, again;
+    readonly Label empty = new Label { TextAlign = ContentAlignment.MiddleCenter, ForeColor = SystemColors.GrayText, BackColor = SystemColors.Window,
+                                       UseMnemonic = false };   // over the list while it is empty
 
     public LogPage(Action save)
     {
         this.save = save;
         Font = new Font("Segoe UI", 9F);
         Dock = DockStyle.Fill;
-        Padding = new Padding(8, 6, 8, 6);
+        Padding = Ui.PagePadding;
 
-        var top = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 36, WrapContents = false, Padding = new Padding(0, 4, 0, 0) };
+        var top = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 34, WrapContents = false, Padding = new Padding(0, 5, 0, 0) };
         var on = new CheckBox { Text = "Keep a log of links", AutoSize = true, Checked = Config.LogOn, Font = new Font(Font, FontStyle.Bold),
                                 Margin = new Padding(3, 5, 3, 3) };
-        on.CheckedChanged += delegate { Config.LogOn = on.Checked; save(); };
+        on.CheckedChanged += delegate { Config.LogOn = on.Checked; save(); ShowEmpty(); };
         top.Controls.Add(on);
-        top.Controls.Add(new TabHelp("The Link log tab",
+        var help = new TabHelp("The Link log tab",
             "# The list",
             "Every link: when, from which app, where it went, what changed - cleaned copies too, as (copied).",
             "Select one: see it in full below.",
@@ -116,7 +122,7 @@ class LogPage : UserControl
             "Copy link / Open again: copy it, or send it again through the rules and the live category.",
             "Clear log: deletes it. Untick Keep a log to stop.",
             "# Private",
-            "Only here: link-log.txt next to LinkPilot, the newest " + LinkLog.Keep + " links. Nothing is sent.") { Margin = new Padding(6, 6, 0, 0) });
+            "Only here: link-log.txt next to LinkPilot, the newest " + LinkLog.Keep + " links. Nothing is sent.");
         top.Controls.Add(count);
 
         list.Columns.Add("When", 118);
@@ -127,26 +133,28 @@ class LogPage : UserControl
         list.Resize += delegate { FitLastColumn(); };
         list.SelectedIndexChanged += delegate { ShowSelected(); };
         list.DoubleClick += delegate { CopyLink(); };
+        list.Controls.Add(empty);
+        list.Resize += delegate { empty.SetBounds(0, 26, list.ClientSize.Width, Math.Max(0, list.ClientSize.Height - 26)); };
 
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 38, Padding = new Padding(0, 6, 0, 0) };
-        var refresh = new Button { Text = "Refresh", AutoSize = true };
-        refresh.Click += delegate { Fill(); };
-        copy = new Button { Text = "Copy link", AutoSize = true, Enabled = false };
-        copy.Click += delegate { CopyLink(); };
-        again = new Button { Text = "Open again", AutoSize = true, Enabled = false };
-        again.Click += delegate { OpenAgain(); };
-        var clear = new Button { Text = "Clear log", AutoSize = true, Margin = new Padding(24, 3, 3, 3) };
-        clear.Click += delegate
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 38, Padding = new Padding(0, 4, 0, 0) };
+        var refresh = Ui.Button("Refresh", delegate { Fill(); });
+        copy = Ui.Button("Copy link", delegate { CopyLink(); });
+        copy.Enabled = false;
+        again = Ui.Button("Open again", delegate { OpenAgain(); });
+        again.Enabled = false;
+        var clear = Ui.Button("Clear log", delegate
         {
             if (MessageBox.Show(FindForm(), "Delete the whole link log?", "LinkPilot", MessageBoxButtons.YesNo,
                                 MessageBoxIcon.Question) != DialogResult.Yes) return;
             LinkLog.Clear();
             Fill();
-        };
-        buttons.Controls.AddRange(new Control[] { refresh, copy, again, clear });
+        });
+        clear.Margin = new Padding(24, 3, 3, 3);   // set apart: it cannot be undone
+        buttons.Controls.AddRange(new Control[] { copy, again, refresh, clear });
 
         Controls.Add(list);
         Controls.Add(top);
+        Controls.Add(Ui.PageHeader("Link log", "Every link, where it came from and where it went. Kept on this PC.", help));
         Controls.Add(details);
         Controls.Add(new Panel { Dock = DockStyle.Bottom, Height = 6 });
         Controls.Add(buttons);
@@ -187,8 +195,9 @@ class LogPage : UserControl
             list.Items.Add(item);
         }
         list.EndUpdate();
-        count.Text = entries.Count == 0 ? (Config.LogOn ? "no links yet" : "") : entries.Count + (entries.Count == 1 ? " link" : " links");
+        count.Text = entries.Count == 0 ? "" : entries.Count + (entries.Count == 1 ? " link" : " links");   // none: the list says so
         details.Text = entries.Count == 0 ? "Links you open from other programs will appear here." : "Select a link to see it in full.";
+        ShowEmpty();
         if (keep != null)
             foreach (ListViewItem item in list.Items)
             {
@@ -196,6 +205,14 @@ class LogPage : UserControl
                 if (e.When == keep.When && e.Opened == keep.Opened) { item.Selected = true; item.EnsureVisible(); break; }
             }
         ShowSelected();
+    }
+
+    // With no links: why, and what to do.
+    void ShowEmpty()
+    {
+        empty.Visible = list.Items.Count == 0;
+        empty.Text = Config.LogOn ? "No links yet - click a link in any app and it shows here."
+                                  : "The log is off - tick Keep a log of links above.";
     }
 
     // "Signal.exe" as "Signal", using the app list's name where it knows the program

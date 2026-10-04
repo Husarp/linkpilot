@@ -1,5 +1,6 @@
-// Small pieces shared by the windows: the one (i) per tab that explains everything on it, and
-// headings that can carry it. The explanations live there instead of in long texts across the windows.
+// Small pieces shared by the windows: the colours and sizes, buttons, the header of every tab, the one
+// (i) per tab that explains everything on it, and headings that can carry it. The explanations live
+// there instead of in long texts across the windows.
 
 using System;
 using System.Drawing;
@@ -10,14 +11,98 @@ using System.Windows.Forms;
 
 static class Ui
 {
+    // The colours, in one place.
     public static readonly Color Accent = Color.FromArgb(0, 103, 192);
+    public static readonly Color AccentDark = Color.FromArgb(0, 90, 158);    // headings on a soft blue box
     public static readonly Color Bar = Color.FromArgb(240, 240, 240);        // the strip along a window's bottom
     public static readonly Color Picked = Color.FromArgb(204, 228, 247);     // a selected line
+    public static readonly Color Soft = Color.FromArgb(243, 247, 252);       // a box set apart: an example, a note
+    public static readonly Color HelpBack = Color.FromArgb(236, 243, 254);   // the (i)'s panel
+    public static readonly Color Ok = Color.FromArgb(16, 124, 65), OkBack = Color.FromArgb(232, 246, 237);
+    public static readonly Color Warn = Color.FromArgb(90, 60, 0), WarnBack = Color.FromArgb(255, 244, 206);
+    public static readonly Color Line = Color.FromArgb(235, 235, 235);       // thin lines between things
+    public static readonly Color Muted = Color.FromArgb(70, 70, 70);         // text under a choice
+
+    // The sizes: the space inside every tab, between groups, and the height of buttons.
+    public const int Edge = 12, Gap = 8, ButtonHeight = 28, BigButtonHeight = 34;
+
+    // The padding of every tab page.
+    public static Padding PagePadding { get { return new Padding(Edge, 8, Edge, 8); } }
+
+    // A normal button: the same height everywhere, a little wider than its text.
+    public static System.Windows.Forms.Button Button(string text, EventHandler click)
+    {
+        var b = new System.Windows.Forms.Button { Text = text, AutoSize = true, Size = new Size(80, ButtonHeight), MinimumSize = new Size(80, ButtonHeight),
+                             Padding = new Padding(8, 0, 8, 0) };
+        if (click != null) b.Click += click;
+        return b;
+    }
+
+    // The blue button that goes on: big in the setup, small (a normal button's height) in a dialog.
+    public static System.Windows.Forms.Button Primary(string text, bool small = false)
+    {
+        var b = new System.Windows.Forms.Button { Text = text, AutoSize = true, Height = small ? ButtonHeight : BigButtonHeight,
+                             MinimumSize = new Size(small ? 80 : 0, small ? ButtonHeight : BigButtonHeight),
+                             Padding = small ? new Padding(10, 0, 10, 0) : new Padding(14, 0, 14, 0),
+                             Font = new Font("Segoe UI", small ? 9F : 9.75F, FontStyle.Bold), BackColor = Accent, ForeColor = Color.White,
+                             FlatStyle = FlatStyle.Flat };
+        b.FlatAppearance.BorderSize = 0;
+        // turned off, it is grey - a flat button keeps its blue otherwise, and looks as if it would work
+        b.EnabledChanged += delegate
+        {
+            b.BackColor = b.Enabled ? Accent : SystemColors.Control;
+            b.ForeColor = b.Enabled ? Color.White : SystemColors.GrayText;
+        };
+        return b;
+    }
+
+    // The top of every tab: its name with the (i) beside it, one plain line under them, and a thin
+    // line along the bottom.
+    public static Panel PageHeader(string title, string line, TabHelp help)
+    {
+        var p = new Panel { Dock = DockStyle.Top, Height = 54 };
+        var top = Heading(title, help, 11F);
+        top.Location = new Point(0, 0);
+        p.Controls.Add(top);
+        p.Controls.Add(new Label { Text = line, AutoSize = true, ForeColor = SystemColors.GrayText, UseMnemonic = false, Location = new Point(3, 29) });
+        p.Controls.Add(new Panel { Dock = DockStyle.Bottom, Height = 1, BackColor = Line });
+        return p;
+    }
+
+    // What a list shows while it is empty: a bold line, a plain one, and a way on (any of them may be
+    // null). Laid over the list, its content kept in the middle.
+    public static Panel Empty(string headline, string line, params Control[] ways)
+    {
+        var p = new Panel { BackColor = SystemColors.Window };
+        var column = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true,
+                                           AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = SystemColors.Window };
+        if (headline != null)
+            column.Controls.Add(new Label { Text = headline, AutoSize = true, Font = new Font("Segoe UI", 9.75F, FontStyle.Bold),
+                                            Margin = new Padding(3, 0, 3, 4) });
+        var says = line == null ? null : new Label { Text = line, AutoSize = true, MaximumSize = new Size(360, 0), ForeColor = SystemColors.GrayText,
+                                                     UseMnemonic = false, Margin = new Padding(3, 0, 3, 10) };
+        if (says != null) column.Controls.Add(says);
+        var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
+        foreach (var w in ways) if (w != null) row.Controls.Add(w);
+        if (row.Controls.Count > 0) column.Controls.Add(row);
+        p.Controls.Add(column);
+        LayoutEventHandler centre = delegate
+        {
+            // the line wraps to fit a narrow list
+            var most = new Size(Math.Max(120, Math.Min(360, p.ClientSize.Width - 24)), 0);
+            if (says != null && says.MaximumSize != most) says.MaximumSize = most;
+            var size = column.GetPreferredSize(Size.Empty);
+            column.Location = new Point(Math.Max(0, (p.ClientSize.Width - size.Width) / 2), Math.Max(8, (p.ClientSize.Height - size.Height) / 3));
+        };
+        p.Layout += centre;
+        return p;
+    }
 
     // "Categories (i)" - bold text, with the tab's (i) after it if it has one
     public static FlowLayoutPanel Heading(string text, TabHelp help, float size = 9.75F)
     {
-        var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(3, 0, 3, 4), BackColor = Color.Transparent };
+        var row = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false,
+                                        Margin = new Padding(3, 0, 3, 4), BackColor = Color.Transparent };
         row.Controls.Add(new Label { Text = text, AutoSize = true, Font = new Font("Segoe UI", size, FontStyle.Bold),
                                      Margin = new Padding(0, 1, 0, 0) });
         if (help != null) row.Controls.Add(help);
@@ -59,7 +144,7 @@ static class Ui
 class TabHelp : Control
 {
     [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool HideCaret(IntPtr hwnd);
-    static readonly Color Back = Color.FromArgb(236, 243, 254);
+    static readonly Color Back = Ui.HelpBack;
     readonly string title;
     readonly string[] lines;
     bool over;

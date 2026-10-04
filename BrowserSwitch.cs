@@ -37,8 +37,8 @@ using Microsoft.Win32;
 [assembly: System.Reflection.AssemblyProduct("LinkPilot")]
 [assembly: System.Reflection.AssemblyCompany("LinkPilot")]
 [assembly: System.Reflection.AssemblyDescription("Sends each link to the browser and profile you chose")]
-[assembly: System.Reflection.AssemblyVersion("4.5.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("4.5.0.0")]
+[assembly: System.Reflection.AssemblyVersion("4.6.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("4.6.0.0")]
 
 // ---- what we know about the machine ------------------------------------------------------------
 
@@ -69,6 +69,17 @@ class Category
     public string DefaultKey = "";  // the shortcut it was suggested - what Reset puts back
     public bool InCycle = true;     // included when stepping with next / previous
     public bool KeyOn = true;       // its shortcut is in use; off keeps the key but does nothing
+
+    // "Ask every time" (Ask.cs): a category whose browser is this instead of a program. It opens no
+    // browser of its own - each link it gets asks which of the other categories to open in.
+    public const string AskExe = "(ask)";
+    public bool IsAsk { get { return Exe == AskExe; } }
+
+    // It can take a link: its browser is there - or, for Ask every time, some other category's is.
+    public bool Works()
+    {
+        return IsAsk ? Config.Categories.Any(x => !x.IsAsk && x.Works()) : Exe.Length > 0 && File.Exists(Exe);
+    }
 }
 
 // A link rule - see Rules.cs.
@@ -76,11 +87,13 @@ class Rule
 {
     public bool On = true;
     public bool ByApp;          // true: by the app the link came from; false: by its address
+    public bool ByWord;         // by a keyword in its address (Router.HasWord); ByApp is then false
     public string Label = "";   // what the window shows: "Signal", "github.com"
-    public string Match = "";   // app: program file names, ";" between; address: a site, or any text with a "/"
+    public string Match = "";   // app: program file names, ";" between; address: a site, or any text with a "/";
+                                // keyword: its words as Router.Keyword makes them ("pull request")
     public string Category = "";
 
-    public string Describe() { return ByApp ? "comes from " + Label : "address has " + Label; }
+    public string Describe() { return ByApp ? "comes from " + Label : ByWord ? "address has the word " + Label : "address has " + Label; }
 }
 
 // ---- finding browsers and their profiles -------------------------------------------------------
@@ -279,6 +292,10 @@ static class Config
     public static string NextKey = "", PrevKey = "";
     public static string NextDefault = "", PrevDefault = "";   // what Reset puts back
     public static bool NextOn = true, PrevOn = true;           // each can be switched off on its own
+    // Smart queue: next / previous go by recent use, like Alt+Tab - the category live before is the
+    // next one, so one press flips back (Tray.Step). Recent: category names, the latest live first.
+    public static bool SmartQueue = true;
+    public static List<string> Recent = new List<string>();
     // What a pinned dock icon says when the mouse rests on it: "Work", or "Switch to Work".
     public static bool TipSwitchTo;
     // Link rules (Rules.cs): checked before the live category, first match wins. RulesOn is the one
@@ -295,10 +312,10 @@ static class Config
     public static bool CopyCleanOn;
     // The link log (LinkLog.cs), kept on this PC only.
     public static bool LogOn = true;
-    // Updates (Updater.cs): asking GitHub once a day is off until turned on. LastVersion is the
-    // version that last ran, so the dock can say when an update has happened.
-    public static bool UpdateCheck;
-    public static DateTime UpdateChecked = DateTime.MinValue;
+    // Updates (Updater.cs): asking GitHub for a newer version by itself - on to begin with. When it
+    // last asked is kept in memory only: written here, every check would wake the dock's watcher.
+    // LastVersion is the version that last ran, so the dock can say when an update has happened.
+    public static bool CheckUpdates = true;
     public static string LastVersion = "";
     // A taskbar button while the window is open (off: the window lives only in the dock), and
     // whether the note saying where LinkPilot keeps running has been shown once.
@@ -309,6 +326,8 @@ static class Config
     public static List<string> CleanOff = new List<string>(), UnwrapOff = new List<string>(), CleanAdded = new List<string>();
     // What .htm / .html files look like in File Explorer (FileIcon.cs): "page", "browser" or "own".
     public static string FileIconStyle = "page";
+    // How the Ask every time window (Ask.cs) sorts the categories: "name", "most" (used) or "recent".
+    public static string AskSort = "most";
 
     // config.txt, one line each, so it can be read and edited by hand:
     //     active=Work
@@ -320,12 +339,14 @@ static class Config
     //     default-previous=Ctrl+Alt+Shift+Space
     //     next-on=yes                              ("no": kept, but not in use)
     //     previous-on=yes
+    //     smart-queue=on                           ("off": next / previous go in list order)
+    //     recent-live=Work|Home|Private            (the categories by recent use, the live one first)
     //     fileicon=page                            (or "browser", or "own": see FileIcon.cs)
+    //     ask-sort=most                            (or "name", or "recent": the Ask every time window, Ask.cs)
     //     taskbar=on                               ("off": no taskbar button, the window lives in the dock)
     //     closed-once=yes                          (the "still running next to the clock" note was shown)
     //     setup=done                               (the setup screen has been seen)
-    //     updates=off                              ("on": ask GitHub once a day for a newer version)
-    //     update-checked=2026-09-24 11:20          (when it last asked)
+    //     check-updates=on                         ("off": ask GitHub for a newer version only on Check now)
     //     version=3.9.0                            (the version that last ran)
     //     log=on                                   (keep a log of links, link-log.txt; LinkLog.cs)
     //     clean=on                                 (remove tracking parts from links; Cleaner.cs)
@@ -338,10 +359,12 @@ static class Config
     //     rules-key=Ctrl+Alt+R                     (turns rules on and off)
     //     default-rules-key=Ctrl+Alt+R
     //     rules-key-on=yes
-    //     rule=on|app|Signal|Signal.exe|Work       (on or off | app or address | shown as | matches | category)
+    //     rule=on|app|Signal|Signal.exe|Work       (on or off | app, address or word | shown as | matches | category)
     //     rule=on|address|github.com|github.com|Home
+    //     rule=on|word|Pull-Request|pull request|Work
     //     category=Work|C:\...\brave.exe|--profile-directory="Profile 2"|Brave - Work
     //     category=Work|C:\...\brave.exe|--profile-directory="Profile 2"|Brave - Work|1|color:#6366F1|F13|Ctrl+Alt+W|no|off
+    //     category=Pick|(ask)||Ask every time     (no browser: each link asks which category - Ask.cs)
     // The last six are optional: pinned to the dock ("1" or empty), the dock icon, the shortcut, the
     // shortcut it was suggested, "no" if next / previous should skip it, "off" if its shortcut is
     // switched off.
@@ -354,9 +377,10 @@ static class Config
         try { text = File.ReadAllText(File_); } catch { return false; }
         Categories.Clear(); Active = ""; FallbackExe = ""; ShortcutsOn = false; NextKey = ""; PrevKey = ""; TipSwitchTo = false;
         NextDefault = ""; PrevDefault = ""; NextOn = true; PrevOn = true; RulesOn = true; Rules.Clear();
-        RulesKey = ""; RulesDefault = ""; RulesKeyOn = true; FileIconStyle = "page";
+        SmartQueue = true; Recent.Clear();
+        RulesKey = ""; RulesDefault = ""; RulesKeyOn = true; FileIconStyle = "page"; AskSort = "most";
         CleanOn = true; UnwrapOn = true; CopyCleanOn = false; CleanOff.Clear(); UnwrapOff.Clear(); CleanAdded.Clear(); LogOn = true;
-        UpdateCheck = false; UpdateChecked = DateTime.MinValue; LastVersion = ""; TaskbarButton = true; ClosedOnce = false; SetupDone = false;
+        CheckUpdates = true; LastVersion = ""; TaskbarButton = true; ClosedOnce = false; SetupDone = false;
         LastText = text;
         bool keysSeen = false, nextDefaultSeen = false, prevDefaultSeen = false, rulesKeySeen = false, setupSeen = false;
         foreach (string raw in text.Split('\n'))
@@ -373,23 +397,29 @@ static class Config
             if (line.StartsWith("default-previous=", StringComparison.OrdinalIgnoreCase)) { PrevDefault = line.Substring(17).Trim(); prevDefaultSeen = true; continue; }
             if (line.StartsWith("next-on=", StringComparison.OrdinalIgnoreCase)) { NextOn = line.Substring(8).Trim().ToLowerInvariant() != "no"; continue; }
             if (line.StartsWith("previous-on=", StringComparison.OrdinalIgnoreCase)) { PrevOn = line.Substring(12).Trim().ToLowerInvariant() != "no"; continue; }
+            if (line.StartsWith("smart-queue=", StringComparison.OrdinalIgnoreCase)) { SmartQueue = line.Substring(12).Trim().ToLowerInvariant() != "off"; continue; }
+            if (line.StartsWith("recent-live=", StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (string n in line.Substring(12).Split('|')) if (n.Trim().Length > 0) Recent.Add(n.Trim());
+                continue;
+            }
             if (line.StartsWith("fileicon=", StringComparison.OrdinalIgnoreCase))
             {
                 string v = line.Substring(9).Trim().ToLowerInvariant();
                 FileIconStyle = v == "browser" || v == "own" ? v : "page";
                 continue;
             }
+            if (line.StartsWith("ask-sort=", StringComparison.OrdinalIgnoreCase))
+            {
+                string v = line.Substring(9).Trim().ToLowerInvariant();
+                AskSort = v == "name" || v == "recent" ? v : "most";
+                continue;
+            }
             if (line.StartsWith("setup=", StringComparison.OrdinalIgnoreCase)) { SetupDone = line.Substring(6).Trim().ToLowerInvariant() == "done"; setupSeen = true; continue; }
             if (line.StartsWith("taskbar=", StringComparison.OrdinalIgnoreCase)) { TaskbarButton = line.Substring(8).Trim().ToLowerInvariant() != "off"; continue; }
             if (line.StartsWith("closed-once=", StringComparison.OrdinalIgnoreCase)) { ClosedOnce = line.Substring(12).Trim().ToLowerInvariant() == "yes"; continue; }
-            if (line.StartsWith("updates=", StringComparison.OrdinalIgnoreCase)) { UpdateCheck = line.Substring(8).Trim().ToLowerInvariant() == "on"; continue; }
-            if (line.StartsWith("update-checked=", StringComparison.OrdinalIgnoreCase))
-            {
-                DateTime when;
-                if (DateTime.TryParseExact(line.Substring(15).Trim(), "yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture,
-                                           System.Globalization.DateTimeStyles.None, out when)) UpdateChecked = when;
-                continue;
-            }
+            // "updates=" (until 4.6.0) is not read: every config.txt had "off" there, chosen or not
+            if (line.StartsWith("check-updates=", StringComparison.OrdinalIgnoreCase)) { CheckUpdates = line.Substring(14).Trim().ToLowerInvariant() != "off"; continue; }
             if (line.StartsWith("version=", StringComparison.OrdinalIgnoreCase)) { LastVersion = line.Substring(8).Trim(); continue; }
             if (line.StartsWith("log=", StringComparison.OrdinalIgnoreCase)) { LogOn = line.Substring(4).Trim().ToLowerInvariant() != "off"; continue; }
             if (line.StartsWith("clean=", StringComparison.OrdinalIgnoreCase)) { CleanOn = line.Substring(6).Trim().ToLowerInvariant() != "off"; continue; }
@@ -407,6 +437,7 @@ static class Config
                 string[] r = line.Substring(5).Split('|');
                 if (r.Length >= 5)
                     Rules.Add(new Rule { On = r[0].Trim().ToLowerInvariant() != "off", ByApp = r[1].Trim().ToLowerInvariant() == "app",
+                                         ByWord = r[1].Trim().ToLowerInvariant() == "word",
                                          Label = r[2].Trim(), Match = r[3].Trim(), Category = r[4].Trim() });
                 continue;
             }
@@ -525,13 +556,22 @@ static class Config
         sb.AppendLine("default-previous=" + PrevDefault);
         sb.AppendLine("next-on=" + (NextOn ? "yes" : "no"));
         sb.AppendLine("previous-on=" + (PrevOn ? "yes" : "no"));
+        sb.AppendLine("smart-queue=" + (SmartQueue ? "on" : "off"));
+        // however the live category changed - the dock, the window, --switch - it is now the most
+        // recent one; categories no longer there are dropped
+        if (Active.Length > 0)
+        {
+            Recent.RemoveAll(n => string.Equals(n, Active, StringComparison.OrdinalIgnoreCase));
+            Recent.Insert(0, Active);
+        }
+        Recent.RemoveAll(n => !Categories.Any(c => string.Equals(c.Name, n, StringComparison.OrdinalIgnoreCase)));
+        if (Recent.Count > 0) sb.AppendLine("recent-live=" + string.Join("|", Recent));
         sb.AppendLine("fileicon=" + FileIconStyle);
+        sb.AppendLine("ask-sort=" + AskSort);
         sb.AppendLine("taskbar=" + (TaskbarButton ? "on" : "off"));
         if (ClosedOnce) sb.AppendLine("closed-once=yes");
         if (SetupDone) sb.AppendLine("setup=done");
-        sb.AppendLine("updates=" + (UpdateCheck ? "on" : "off"));
-        if (UpdateChecked != DateTime.MinValue)
-            sb.AppendLine("update-checked=" + UpdateChecked.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture));
+        sb.AppendLine("check-updates=" + (CheckUpdates ? "on" : "off"));
         if (LastVersion.Length > 0) sb.AppendLine("version=" + LastVersion);
         sb.AppendLine("log=" + (LogOn ? "on" : "off"));
         sb.AppendLine("clean=" + (CleanOn ? "on" : "off"));
@@ -545,7 +585,7 @@ static class Config
         sb.AppendLine("default-rules-key=" + RulesDefault);
         sb.AppendLine("rules-key-on=" + (RulesKeyOn ? "yes" : "no"));
         foreach (var r in Rules)
-            sb.AppendLine("rule=" + (r.On ? "on" : "off") + "|" + (r.ByApp ? "app" : "address") + "|" +
+            sb.AppendLine("rule=" + (r.On ? "on" : "off") + "|" + (r.ByApp ? "app" : r.ByWord ? "word" : "address") + "|" +
                           r.Label.Replace("|", "") + "|" + r.Match.Replace("|", "") + "|" + r.Category);
         foreach (var c in Categories)
             sb.AppendLine("category=" + c.Name + "|" + c.Exe + "|" + c.Args + "|" + c.Shows +
@@ -659,18 +699,22 @@ static class Program
                     Cleaner.Parts().Count(Cleaner.IsOn) + " of " + Cleaner.Parts().Count() + " parts), redirects " +
                     (Config.UnwrapOn ? "on" : "off") + " (" + Cleaner.Redirects.Count(Cleaner.IsOn) + " of " + Cleaner.Redirects.Count + ")" +
                     ", copied links " + (Config.CopyCleanOn ? "on" : "off"));
-                sb.AppendLine("updates:          " + (Config.UpdateCheck ? "checked once a day" : "off - checked only when asked") +
-                    (Config.UpdateChecked != DateTime.MinValue ? ", last " + Config.UpdateChecked.ToString("yyyy-MM-dd HH:mm") : ""));
+                sb.AppendLine("updates:          " + (Config.CheckUpdates ? "checked at start and when the window opens" : "off - checked only when asked"));
                 sb.AppendLine("link log:          " + (Config.LogOn ? "on" : "off") + " - " + LinkLog.Read().Count + " links kept");
                 sb.AppendLine("rules on/off key:  " + (Config.RulesKey.Length > 0 ? Config.RulesKey : "(none)") + (Config.RulesKeyOn ? "" : " (off)"));
                 using (var rp = new RulesPage(() => { }))
                 using (var kp = new ShortcutsPage(null, () => { }))
                 using (var cp = new CleaningPage(() => { }))
                 using (var lp = new LogPage(() => { }))
-                using (var up = new AboutPage(() => { }, () => { }))
+                using (var up = new AboutPage(() => { }, () => { }, () => { }))
                 using (var ap = new AppPicker())
                     sb.AppendLine("rules and shortcuts tabs built, app list built: " + ap.Text + " (" + AppCatalog.All.Count +
                                   " apps in " + AppCatalog.Groups.Length + " groups, " + Router.Recent().Count + " seen lately)");
+                // the Ask every time window, built for an example link and not shown
+                using (var ask = new AskForm("https://www.example.com/page"))
+                    sb.AppendLine("ask window built:  " + ask.RowCount + " to choose from, sorted by " + Config.AskSort +
+                                  (Config.Categories.Any(c => c.IsAsk) ? " - asks for " + string.Join(", ", Config.Categories.Where(c => c.IsAsk).Select(c => c.Name))
+                                                                       : " - no category asks"));
                 File.WriteAllText(Path.Combine(Config.Dir, "selftest.txt"), sb.ToString());
                 return 0;
             }
@@ -744,12 +788,13 @@ static class Program
         if (rule != null)
         {
             var to = Config.Categories.First(x => string.Equals(x.Name, rule.Category, StringComparison.OrdinalIgnoreCase));
-            chosen = to; exe = to.Exe; extra = to.Args; why = to.Name + " (rule: " + rule.Describe() + ")";
+            chosen = to; exe = to.Exe; extra = to.Args; why = (to.IsAsk ? "ask - " : "") + to.Name + " (rule: " + rule.Describe() + ")";
             return;
         }
+        // Ask every time comes back as itself (exe "(ask)", never launched): Open asks, --dry only says so
         var c = Config.Current();
-        if (c != null && c.Exe.Length > 0 && File.Exists(c.Exe))
-        { chosen = c; exe = c.Exe; extra = c.Args; why = Config.Active; return; }
+        if (c != null && c.Works())
+        { chosen = c; exe = c.Exe; extra = c.Args; why = (c.IsAsk ? "ask - " : "") + Config.Active; return; }
 
         extra = "";
         string reason = c != null ? c.Name + " has no browser"
@@ -795,6 +840,19 @@ static class Program
         url = Cleaner.Apply(url, out changes);     // redirects skipped, tracking removed - before the rules look
         Category chosen;
         Resolve(url, source, out exe, out extra, out why, out chosen);
+        // Ask every time: a small window asks which category's browser (Ask.cs). Esc opens nothing -
+        // the log still has the link, so Open again on the Link log tab can send it after all.
+        if (chosen != null && chosen.IsAsk)
+        {
+            chosen = AskForm.Pick(url, source);
+            if (chosen == null)
+            {
+                LinkLog.Add(new LinkLog.Entry { When = DateTime.Now, From = source ?? "", Asked = asked, Opened = url, Changes = changes,
+                                                Why = "nowhere - asked, and not opened", OpenedIn = "(not opened)" });
+                return;
+            }
+            exe = chosen.Exe; extra = chosen.Args; why = chosen.Name + " (asked)";
+        }
         LinkLog.Add(new LinkLog.Entry { When = DateTime.Now, From = source ?? "", Asked = asked, Opened = url, Changes = changes,
                                         Why = why, OpenedIn = chosen != null ? chosen.Name : BrowserName(exe) });
         if (exe.Length > 0) Launch(exe, extra, url);

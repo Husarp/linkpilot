@@ -21,6 +21,7 @@ class Tray : ApplicationContext
 {
     const string OneCopy = @"Local\BrowserSwitch.Dock";          // one dock per signed-in user
     const string OpenSignal = @"Local\BrowserSwitch.OpenWindow";
+    const string QuitSignal = @"Local\BrowserSwitch.Quit";           // LinkPilotSetup.exe closes the dock with it
 
     [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(int processId);
     [DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr handle);
@@ -53,7 +54,7 @@ class Tray : ApplicationContext
     readonly Note note = new Note();
     readonly HotkeyWindow keys = new HotkeyWindow();
     readonly CopiedLinks copied = new CopiedLinks();       // cleans a copied link, while that is turned on
-    readonly System.Windows.Forms.Timer updateClock = new System.Windows.Forms.Timer { Interval = 60 * 1000 };
+    readonly System.Windows.Forms.Timer updateClock = new System.Windows.Forms.Timer { Interval = 30 * 1000 };
     string announced;   // the newer version already mentioned, so it is said once
     readonly Dictionary<int, string> keyTargets = new Dictionary<int, string>();   // shortcut id -> category
     SwitchForm window;
@@ -86,8 +87,13 @@ class Tray : ApplicationContext
             Config.Save();
             if (updated) note.Say("LinkPilot updated", "Now version " + Updater.Current, null);
         }
-        // the daily question to GitHub - only if it was turned on; first a minute after starting
-        updateClock.Tick += delegate { updateClock.Interval = 3600 * 1000; CheckForUpdate(); };
+        // updates: the question to GitHub 30 seconds after starting (the network may not be up yet
+        // at sign-in), then every 6 hours - and whenever the window comes to the front (MakeWindow)
+        Updater.Owner = ui;
+        Updater.Quit = Exit;
+        Updater.Changed += Announce;
+        Updater.RemoveOldDownloads();
+        updateClock.Tick += delegate { updateClock.Interval = 6 * 3600 * 1000; Updater.AutoCheck(); };
         updateClock.Start();
 
         // config.txt also changes from outside: other copies of this program (--switch, --reset) and
@@ -103,6 +109,9 @@ class Tray : ApplicationContext
         // a copy started from the Start menu or the Desktop asks this one to open the window
         var signal = new EventWaitHandle(false, EventResetMode.AutoReset, OpenSignal);
         new Thread(() => { while (signal.WaitOne()) ui.BeginInvoke((MethodInvoker)OpenWindow); }) { IsBackground = true }.Start();
+        // the Setup asks it to exit before it replaces the program, so the icons go cleanly
+        var quit = new EventWaitHandle(false, EventResetMode.AutoReset, QuitSignal);
+        new Thread(() => { while (quit.WaitOne()) ui.BeginInvoke((MethodInvoker)Exit); }) { IsBackground = true }.Start();
 
         if (openWindow) OpenWindow();
         else
@@ -121,6 +130,7 @@ class Tray : ApplicationContext
         window.PauseShortcuts = PauseKeys;
         window.ShortcutFree = keys.IsFree;
         window.ClosedByYou = SayWhereItIs;               // closing only hides it
+        window.CameBack = Updater.AutoCheck;             // shown or brought to the front: is there a newer version?
     }
 
     void OpenWindow()
@@ -132,21 +142,14 @@ class Tray : ApplicationContext
         window.Activate();
     }
 
-    // Asks GitHub for the newest version, if allowed and not asked in the last day. Only a newer
-    // version is ever mentioned - once - and nothing is downloaded until you choose to update.
-    void CheckForUpdate()
+    // A newer version is mentioned once, by a note - unless the window is open, where the banner
+    // says it. Nothing is downloaded until you press Update.
+    void Announce()
     {
-        if (!Config.UpdateCheck || (DateTime.Now - Config.UpdateChecked).TotalHours < 24) return;
-        Updater.CheckInBackground(ui, (latest, problem) =>
-        {
-            if (problem != null) return;          // offline, or GitHub not answering: ask again later
-            Config.Save();                        // when it last asked
-            if (Updater.UpdateWaiting && latest != announced)
-            {
-                announced = latest;
-                note.Say("LinkPilot " + latest + " is available", "Right-click the dock icon - Update to " + latest, null);
-            }
-        });
+        if (!Updater.UpdateWaiting || Updater.Latest == announced) return;
+        announced = Updater.Latest;
+        if (window != null && !window.IsDisposed && window.Visible) return;
+        note.Say("LinkPilot " + Updater.Latest + " is available", "Open LinkPilot to update", null);
     }
 
     // The first time the window is closed, a note says LinkPilot is still running and where -
@@ -232,14 +235,56 @@ class Tray : ApplicationContext
         else { string name; if (keyTargets.TryGetValue(id, out name)) SwitchTo(Find(name)); }
     }
 
-    // Next or previous among the categories ticked for it (and with a browser), in list order,
-    // wrapping round. It moves on from wherever the live one sits in the list - even when the live
-    // one is not ticked itself, so a category reached by its own key never traps you.
+    // Next or previous among the categories ticked for it (and with a browser), wrapping round. It
+    // moves on from wherever the live one sits - even when the live one is not ticked itself, so a
+    // category reached by its own key never traps you.
+    //
+    // In list order, or with the smart queue (on to begin with) by recent use, like Alt+Tab: Next
+    // goes to the category live before this one, so a single press flips back, and Previous to the
+    // one live longest ago. Presses in quick succession - each within RunGap of the last, with
+    // nothing else changing the live category in between - are one run: they walk on along the
+    // queue as it was when the run began, instead of flipping between the same two. After a run the
+    // one it ended on comes first and the rest keep their order: walking A, B, C leaves C, A, B.
     void Step(int by)
     {
-        var c = StepFrom(Config.Categories, Config.Active, by);
-        if (c != null) SwitchTo(c);
-        else note.Say("Nothing to step through", "Tick categories for next / previous under Shortcuts…", null);
+        var order = Config.Categories;
+        if (Config.SmartQueue)
+        {
+            bool going = run != null && DateTime.Now - runAt < RunGap &&
+                         string.Equals(Config.Active, runLanded, StringComparison.OrdinalIgnoreCase);
+            if (!going) run = Queue(Config.Categories, Config.Recent, Config.Active).Select(x => x.Name).ToList();
+            order = Queue(Config.Categories, run, "");
+        }
+        var c = StepFrom(order, Config.Active, by);
+        if (c == null) { note.Say("Nothing to step through", "Tick categories for next / previous under Shortcuts…", null); return; }
+        if (Config.SmartQueue)
+        {
+            Config.Recent = order.Select(x => x.Name).ToList();
+            Config.Recent.Remove(c.Name);
+            Config.Recent.Insert(0, c.Name);
+            runAt = DateTime.Now;
+            runLanded = c.Name;
+        }
+        SwitchTo(c);
+    }
+
+    // a pause longer than this ends a run of next / previous presses
+    static readonly TimeSpan RunGap = TimeSpan.FromSeconds(3);
+    List<string> run;          // the queue when the current run began, the live one first
+    DateTime runAt;            // the last press in it
+    string runLanded;          // where that press went
+
+    // The categories in smart-queue order: the live one first, then the others by how recently they
+    // were live, then any never live yet in list order. StepFrom then walks it like the list.
+    public static List<Category> Queue(List<Category> all, List<string> recent, string active)
+    {
+        return all.OrderBy(c => string.Equals(c.Name, active, StringComparison.OrdinalIgnoreCase) ? -1 : RecentIndex(recent, c.Name)).ToList();
+    }
+
+    static int RecentIndex(List<string> recent, string name)
+    {
+        int i = recent.FindIndex(n => string.Equals(n, name, StringComparison.OrdinalIgnoreCase));
+        return i < 0 ? int.MaxValue : i;
     }
 
     public static Category StepFrom(List<Category> all, string active, int by)
@@ -399,8 +444,12 @@ class Tray : ApplicationContext
         menu.Items.Add("Exit", null, (s, e) => Exit());
     }
 
+    bool exiting;   // the menu, the Setup's signal and an update can all ask - once is enough
+
     void Exit()
     {
+        if (exiting) return;
+        exiting = true;
         updateClock.Stop();
         watcher.EnableRaisingEvents = false;
         if (window != null && !window.IsDisposed) window.Quit();
@@ -425,7 +474,7 @@ class Tray : ApplicationContext
         {
             if (spec.StartsWith("color:", StringComparison.OrdinalIgnoreCase))
                 return Letter(c.Name, ColorTranslator.FromHtml(spec.Substring(6)));
-            if (spec.StartsWith("tint:", StringComparison.OrdinalIgnoreCase) && c.Exe.Length > 0 && File.Exists(c.Exe))
+            if (spec.StartsWith("tint:", StringComparison.OrdinalIgnoreCase) && (c.IsAsk || c.Exe.Length > 0 && File.Exists(c.Exe)))
             {
                 int[] v = spec.Substring(5).Split(',').Select(x => int.Parse(x.Trim(), System.Globalization.CultureInfo.InvariantCulture)).ToArray();
                 using (var own = BrowserIcon(c))
@@ -435,7 +484,7 @@ class Tray : ApplicationContext
             }
             if (spec.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
                 return FromFile(spec.Substring(5));
-            if (c.Exe.Length > 0 && File.Exists(c.Exe))
+            if (c.IsAsk || c.Exe.Length > 0 && File.Exists(c.Exe))
                 return BrowserIcon(c);
         }
         catch { }
@@ -444,9 +493,10 @@ class Tray : ApplicationContext
 
     // The browser's icon as that profile shows it: for Brave, Chrome and Edge the one with the
     // profile's picture on it, which the browser keeps in the profile's folder; otherwise the plain
-    // icon from the exe (Firefox has no per-profile icons).
+    // icon from the exe (Firefox has no per-profile icons). Ask every time has LinkPilot's own.
     internal static Icon BrowserIcon(Category c)   // also the Rules tab's
     {
+        if (c.IsAsk) return Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         string own = Machine.ProfileIcon(c.Exe, c.Args);
         if (own != null) try { return new Icon(own, 32, 32); } catch { }
         return Icon.ExtractAssociatedIcon(c.Exe);

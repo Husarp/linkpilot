@@ -111,7 +111,10 @@ object Profiles {
     // Which of them are browsers. Android does not let one profile ask what the other's apps can
     // open, so this goes by the browsers it knows by name, and those that are browsers here too.
     fun isBrowser(ctx: Context, pkg: String) =
-        pkg in knownBrowsers || Browsers.all(ctx).any { it.pkg == pkg }
+        isKnownBrowser(pkg) || Browsers.all(ctx).any { it.pkg == pkg }
+
+    // only the ones known by name - for a caller that has the browsers here at hand already
+    fun isKnownBrowser(pkg: String) = pkg in knownBrowsers
 
     private val knownBrowsers = setOf(
         "com.android.chrome", "com.chrome.beta", "org.chromium.chrome", "org.mozilla.firefox", "org.mozilla.fenix",

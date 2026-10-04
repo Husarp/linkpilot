@@ -10,8 +10,8 @@
 #   4. registers it with Windows (install.ps1) and starts it. The first time, it opens on the setup
 #      screen, which walks you through the one step Windows leaves to you.
 #
-# Run it again to update: your categories, rules and settings are kept. The app's own Update button
-# runs this same script. To remove LinkPilot: Settings > Apps > Installed apps.
+# Run it again to update: your categories, rules and settings are kept. The app itself updates with
+# LinkPilotSetup.exe instead. To remove LinkPilot: Settings > Apps > Installed apps.
 #
 # Environment variables that change where things come from and go:
 #   BROWSERSWITCH_DIR         install here instead

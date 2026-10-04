@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- No INTERNET permission: Android itself keeps LinkPilot offline. -->
+<!-- The internet is only for the updater: asking GitHub for a newer version and downloading it.
+     Links, settings and the link log never leave the phone. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Only to ask GitHub for a newer version and download it - the updater, Updates.kt. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Hand the downloaded update to Android's installer (asks "install unknown apps" once). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- To hand links to its own copy in the work profile (Android 11+, "connected work & personal
          apps"); it does nothing until it is allowed. Lint calls it system-only, but it is an app-op
@@ -170,5 +177,14 @@
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
+
+        <!-- Lets Android's installer read the downloaded update from the cache (Updates.kt). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/update_paths" />
+        </provider>
     </application>
 </manifest>

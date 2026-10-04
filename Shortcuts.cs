@@ -183,6 +183,7 @@ class ShortcutsPage : UserControl
     readonly ToolTip hints = new ToolTip();
     readonly Func<string, bool> isFree;   // null when the dock is not running to ask
     readonly Action save;
+    readonly TableLayoutPanel table;
 
     public ShortcutsPage(Func<string, bool> isFree, Action save)
     {
@@ -190,13 +191,17 @@ class ShortcutsPage : UserControl
         this.save = save;
         Font = new Font("Segoe UI", 9F);
         Dock = DockStyle.Fill;
-        AutoScroll = true;      // a long list of categories scrolls rather than being cut off
+        Padding = Ui.PagePadding;
+        var body = new Panel { Dock = DockStyle.Fill, AutoScroll = true };   // a long list of categories scrolls rather than being cut off
 
         // name | keys | Clear | Reset | in next/previous | status. The Reset column keeps its width
         // while empty, so a Reset button appearing does not shift everything sideways.
-        var table = new TableLayoutPanel { ColumnCount = 6, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Location = new Point(12, 12) };
+        table = new TableLayoutPanel { ColumnCount = 6, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Location = new Point(0, 6) };
         for (int i = 0; i < 6; i++)
-            table.ColumnStyles.Add(i == 3 ? new ColumnStyle(SizeType.Absolute, 64) : new ColumnStyle(SizeType.AutoSize));
+            table.ColumnStyles.Add(i == 3 ? new ColumnStyle(SizeType.Absolute, 92) : new ColumnStyle(SizeType.AutoSize));
+        // laid out once, when every line is in: a table that lays itself out again for each of its
+        // controls as it is added - about 80 for ten categories - is what made this tab slow to open
+        table.SuspendLayout();
         int row = 0;
 
         // off until you turn it on: the suggested keys are filled in, but no key is taken away from
@@ -206,7 +211,7 @@ class ShortcutsPage : UserControl
         on.CheckedChanged += delegate { Config.ShortcutsOn = on.Checked; save(); UpdateLines(); };
         var top = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(3, 0, 3, 14) };
         top.Controls.Add(on);
-        top.Controls.Add(new TabHelp("The Shortcuts tab",
+        var help = new TabHelp("The Shortcuts tab",
             "# Keyboard shortcuts",
             "Anywhere: they work in every program while LinkPilot is in the dock.",
             "Suggested keys: filled in - tick Turn on. Change, untick or Reset each one.",
@@ -215,12 +220,23 @@ class ShortcutsPage : UserControl
             "A keyboard button shows nothing: give it F13-F24 in the keyboard's own software (Logi Options+).",
             "# In next / previous",
             "Ticked: Next and Previous step through these categories only.",
+            "# Smart queue",
+            "Ticked: Next goes back to the category used before, so one press flips back. Keep pressing to go on through the rest, as Alt+Tab does.",
+            "Unticked: Next and Previous go in list order.",
             "# Status",
             "Says: ready, taken by another program, used twice, or types a character.",
-            "Types a character: allowed, but that character can't be typed while the shortcut is on - e.g. on a Polish keyboard Ctrl+Alt+A is AltGr+A, so typing ą would switch browsers instead.") { Margin = new Padding(6, 0, 0, 0) });
+            "Types a character: allowed, but that character can't be typed while the shortcut is on - e.g. on a Polish keyboard Ctrl+Alt+A is AltGr+A, so typing ą would switch browsers instead.");
         table.Controls.Add(top, 0, row);
         table.SetColumnSpan(top, 6);
         row++;
+        if (Config.Categories.Count == 0)
+        {
+            var first = new Label { Text = "Make a category first - each one gets its own key.", AutoSize = true, ForeColor = SystemColors.GrayText,
+                                    Margin = new Padding(3, 0, 3, 10) };
+            table.Controls.Add(first, 0, row);
+            table.SetColumnSpan(first, 6);
+            row++;
+        }
 
         table.Controls.Add(Ui.Caption("Active"), 0, row);
         table.Controls.Add(Ui.Caption("Shortcut"), 1, row);
@@ -240,10 +256,21 @@ class ShortcutsPage : UserControl
                 () => Config.NextOn, v => Config.NextOn = v);
         AddLine(table, row++, "Previous category", () => Config.PrevKey, v => Config.PrevKey = v, () => Config.PrevDefault, null,
                 () => Config.PrevOn, v => Config.PrevOn = v);
+        // the order next / previous go in: by recent use (Tray.Step), or the list
+        var smart = new CheckBox { Text = "Smart queue: Next goes back to the category used before", AutoSize = true,
+                                   Checked = Config.SmartQueue, Margin = new Padding(3, 2, 3, 8) };
+        smart.CheckedChanged += delegate { Config.SmartQueue = smart.Checked; save(); };
+        hints.SetToolTip(smart, "Ticked: Next and Previous go by recent use, like Alt+Tab - one press flips back, more go on through the rest. Unticked: list order.");
+        table.Controls.Add(smart, 0, row);
+        table.SetColumnSpan(smart, 6);
+        row++;
         AddLine(table, row++, "Rules on / off", () => Config.RulesKey, v => Config.RulesKey = v, () => Config.RulesDefault, null,
                 () => Config.RulesKeyOn, v => Config.RulesKeyOn = v);
-        Controls.Add(table);
+        body.Controls.Add(table);
+        Controls.Add(body);
+        Controls.Add(Ui.PageHeader("Shortcuts", "Switch categories with a key, from any program.", help));
         UpdateLines();
+        table.ResumeLayout();
     }
 
     // One line: a tick with the name (is this shortcut in use?), the keys, Clear, Reset (only once
@@ -256,11 +283,12 @@ class ShortcutsPage : UserControl
                                     Margin = new Padding(3, 5, 14, 6) };
         active.CheckedChanged += delegate { setOn(active.Checked); save(); UpdateLines(); };
         hints.SetToolTip(active, "Ticked: this shortcut is in use. Unticked: its keys are kept, but pressing them does nothing.");
-        line.Box = new KeyBox { Width = 190, ReadOnly = true, BackColor = SystemColors.Window, Cursor = Cursors.Hand };
-        var clear = new Button { Text = "Clear", AutoSize = true, Margin = new Padding(6, 3, 3, 3) };
-        clear.Click += delegate { line.Set(""); save(); UpdateLines(); };
-        line.Reset = new Button { Text = "Reset", AutoSize = true, Margin = new Padding(6, 3, 3, 3), Visible = false };
-        line.Reset.Click += delegate { line.Set(line.Default()); save(); UpdateLines(); };
+        line.Box = new KeyBox { Width = 190, ReadOnly = true, Anchor = AnchorStyles.Left, BackColor = SystemColors.Window, Cursor = Cursors.Hand };
+        var clear = Ui.Button("Clear", delegate { line.Set(""); save(); UpdateLines(); });
+        clear.Margin = new Padding(6, 2, 3, 2);
+        line.Reset = Ui.Button("Reset", delegate { line.Set(line.Default()); save(); UpdateLines(); });
+        line.Reset.Margin = new Padding(6, 2, 3, 2);
+        line.Reset.Visible = false;
         line.Status = new Label { AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(10, 7, 3, 6) };
         line.Box.KeyDown += (s, e) => Record(line, e.KeyCode, e);
         // Print Screen only ever tells a window that it was let go, never that it was pressed
@@ -309,6 +337,7 @@ class ShortcutsPage : UserControl
     {
         // only shortcuts in use can clash with each other
         var all = lines.Where(x => x.IsOn()).Select(x => x.Get()).Where(x => x.Length > 0).ToList();
+        table.SuspendLayout();   // every line's new text, then one layout
         foreach (var line in lines)
         {
             string s = line.Get(), def = line.Default();
@@ -334,5 +363,6 @@ class ShortcutsPage : UserControl
             hints.SetToolTip(line.Status, problem == "taken by another program" ? TakenHint : "");
             line.Status.ForeColor = problem != null ? Color.DarkOrange : Config.ShortcutsOn ? Color.SeaGreen : SystemColors.GrayText;
         }
+        table.ResumeLayout();
     }
 }

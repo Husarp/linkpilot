@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -76,6 +78,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import java.text.SimpleDateFormat
@@ -194,7 +204,7 @@ private val cardItem @Composable get() = ListItemDefaults.colors(containerColor 
 // ---- Home: default browser, categories ------------------------------------------------------------
 
 @Composable
-fun HomeTab(m: Model, makeDefault: () -> Unit, openSettings: () -> Unit, showSetup: () -> Unit) {
+fun HomeTab(m: Model, makeDefault: () -> Unit, openSettings: () -> Unit, showSetup: () -> Unit, showGuide: () -> Unit) {
     val ctx = LocalContext.current
     m.tick
     val store = m.store
@@ -202,9 +212,11 @@ fun HomeTab(m: Model, makeDefault: () -> Unit, openSettings: () -> Unit, showSet
     val live = store.live()
     val isDefault = m.isDefault
     var adding by remember { mutableStateOf(false) }
+    var removing by remember { mutableStateOf<Category?>(null) }   // asked first - there is no undo
 
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { PageTitle("LinkPilot") }
+        item { PageTitle("LinkPilot", "Which browser each link opens in") }
+        if (Updates.showBanner(ctx)) item { UpdateBanner() }
         if (Profiles.isWorkCopy(ctx)) item {
             val passes = Profiles.relayTarget(ctx) != null
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
@@ -251,52 +263,69 @@ fun HomeTab(m: Model, makeDefault: () -> Unit, openSettings: () -> Unit, showSet
                     "clone it). Add a category then lists them, and says if anything else is needed.",
                 "Links tapped in work apps: make LinkPilot the work profile's default browser too - it passes them here, " +
                     "so these categories and rules decide for them as well.")) {
-                if (cats.isEmpty()) Text("No categories yet.")
+                if (cats.isEmpty()) Column {
+                    Text("No categories yet.", fontWeight = FontWeight.Bold)
+                    Text("Each category is a browser - tap Add a category.", style = MaterialTheme.typography.bodyMedium,
+                         color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 cats.forEach { c ->
+                    val isLive = c.name == live?.name
                     ListItem(
-                        colors = cardItem,
-                        modifier = Modifier.clickable { store.active = c.name; m.changed() },
+                        // the live one stands out, as on Windows
+                        colors = if (isLive) ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.primaryContainer) else cardItem,
+                        modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { store.active = c.name; m.changed() },
                         leadingContent = { Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = c.name == live?.name, onClick = { store.active = c.name; m.changed() })
+                            RadioButton(selected = isLive, onClick = { store.active = c.name; m.changed() })
                             CategoryIcon(m, c)
                         } },
-                        headlineContent = { Text(c.name, fontWeight = FontWeight.Bold) },
+                        headlineContent = { Row(verticalAlignment = Alignment.CenterVertically) {
+                            // a long name gives way, so the tag always shows
+                            Text(c.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                 modifier = Modifier.weight(1f, fill = false))
+                            if (isLive) {
+                                Spacer(Modifier.width(8.dp))
+                                Tag("LIVE", MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.onPrimary)
+                            }
+                        } },
                         supportingContent = { Text(if (m.isInstalled(c)) m.label(c) else "Browser not installed") },
                         trailingContent = {
-                            IconButton(onClick = { store.categories = cats.filter { it.name != c.name }; m.changed() }) {
-                                Icon(Icons.Default.Delete, "Remove")
-                            }
+                            IconButton(onClick = { removing = c }) { Icon(Icons.Default.Delete, "Remove") }
                         })
                 }
-                OutlinedButton(onClick = { adding = true }) {
-                    Icon(Icons.Default.Add, null); Spacer(Modifier.width(8.dp)); Text("Add a category")
-                }
+                val addOne = @Composable { Icon(Icons.Default.Add, null); Spacer(Modifier.width(8.dp)); Text("Add a category") }
+                if (cats.isEmpty()) Button(onClick = { adding = true }) { addOne() }
+                else OutlinedButton(onClick = { adding = true }) { addOne() }
             }
         }
+        item { UpdateSection(m) }
         item {
-            SectionCard("About", "Works offline - no internet permission", info = listOf(
-                "Offline: LinkPilot has no internet permission, so Android itself keeps it offline.",
+            SectionCard("About", "Your links stay on this phone", info = listOf(
+                "Offline: your links, categories, rules and link log never leave the phone. The only connection is to " +
+                    "GitHub, to ask for a newer version and download it (Updates, above).",
                 "Private: your categories, rules and link log stay on this phone.",
                 "Some links never reach it: apps with their own built-in browser (Instagram, Facebook), some Google apps " +
                     "(they always use Chrome), and links an installed app opens itself (YouTube).",
-                "Updates: LinkPilot cannot check by itself - it has no internet. The button opens the newest release on " +
-                    "GitHub in your browser; if its number is higher than yours, download the APK there.")) {
+                "Updates: checked when the app opens or you come back to it; Update downloads the new version inside the " +
+                    "app and hands it to Android's installer.")) {
                 val version = remember { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }
                 Text("Version $version · made for personal use · open source (MIT)",
                      style = MaterialTheme.typography.bodyMedium)
-                OutlinedButton(onClick = {
-                    try {
-                        ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Husarp/linkpilot/releases/latest"))
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                    } catch (_: Exception) { Toast.makeText(ctx, "No browser to open GitHub in", Toast.LENGTH_SHORT).show() }
-                }) { Text("Check for updates on GitHub") }
-                Text("Opens the newest release in your browser - you have $version.", style = MaterialTheme.typography.bodySmall,
-                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = showGuide) { Text("Take the short guide again") }
                 TextButton(onClick = showSetup) { Text("Show the setup again") }
             }
         }
     }
     if (adding) AddCategoryDialog(m) { adding = false }
+    removing?.let { c ->
+        AlertDialog(
+            onDismissRequest = { removing = null },
+            title = { Text("Remove the category ${c.name}?") },
+            text = { Text("Rules that send links to it stay, and are skipped until there is a category with that name again.") },
+            confirmButton = { TextButton(onClick = {
+                store.categories = store.categories.filter { it.name != c.name }; removing = null; m.changed()
+            }) { Text("Remove") } },
+            dismissButton = { TextButton(onClick = { removing = null }) { Text("Cancel") } })
+    }
 }
 
 @Composable
@@ -405,6 +434,16 @@ fun ShortcutsTab(m: Model) {
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { PageTitle("Shortcuts", "Switch without opening the app") }
         item {
+            SectionCard("Next browser", "The tile and the widget", info = listOf(
+                "Smart queue on: a tap goes back to the category used before, so one tap flips back.",
+                "More taps in a row: go on through the rest, as Alt+Tab does on a computer.",
+                "Smart queue off: each tap goes to the next category in the list.")) {
+                SwitchRow("Smart queue", "Next goes back to the category used before", m.store.smartQueue) {
+                    m.store.smartQueue = it; m.changed()
+                }
+            }
+        }
+        item {
             SectionCard("Quick Settings tiles", "In the panel you pull down from the top", info = listOf(
                 "Live category: Next browser and Choose browser show it.",
                 "Long press: on any tile, opens LinkPilot.",
@@ -500,18 +539,25 @@ fun RulesTab(m: Model) {
     val store = m.store
     val rules = store.rules
     val cats = store.categories
-    var adding by remember { mutableStateOf<Boolean?>(null) }   // true: an app rule, false: an address rule
+    var adding by remember { mutableStateOf<String?>(null) }   // "app", "address" or "word": the rule being added
+    var removing by remember { mutableStateOf<Int?>(null) }    // the rule asked about, by its place
 
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { PageTitle("Link rules", "Send some links to their own category") }
         item {
-            SectionCard("Rules", "From an app, or to an address", info = listOf(
+            SectionCard("Rules", "From an app, to an address, or with a keyword", info = listOf(
                 "Order: the first rule that matches decides - rules win over the live category.",
                 "Use rules off: every link goes to the live category; your rules are kept.",
-                "App rules: work when Android says which app sent the link - most apps do. For the rest, use an address rule.")) {
+                "App rules: work when Android says which app sent the link - most apps do. For the rest, use an address rule.",
+                "Keyword rules: a whole word in the link - not part of a word, nor a parameter's name.")) {
                 SwitchRow("Use rules", "Off: every link goes to the live category", store.rulesOn) { store.rulesOn = it; m.changed() }
                 HorizontalDivider()
-                if (rules.isEmpty()) Text("No rules yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (rules.isEmpty()) Column {
+                    Text("No rules yet.", fontWeight = FontWeight.Bold)
+                    Text(if (cats.size < 2) "Add a second category on Home first."
+                         else "Send links from one app or site to its own category.",
+                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 rules.forEachIndexed { i, r ->
                     val target = cats.firstOrNull { it.name.equals(r.category, ignoreCase = true) }
                     ListItem(
@@ -521,7 +567,7 @@ fun RulesTab(m: Model) {
                         // the app's icon (app rules), and the icon of the browser its links open in
                         headlineContent = { Row(verticalAlignment = Alignment.CenterVertically) {
                             if (r.byApp) SmallIcon(remember(r.match, r.profile) { m.appIcon(Profiles.appKey(r.match, r.profile)) })
-                            Text(if (r.byApp) "From ${r.shown}" else r.shown)
+                            Text(if (r.byApp) "From ${r.shown}" else if (r.byWord) "Word: ${r.shown}" else r.shown)
                         } },
                         supportingContent = { Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("→ ")
@@ -529,28 +575,49 @@ fun RulesTab(m: Model) {
                             Text(r.category + if (target == null) "  (category gone - skipped)" else "")
                         } },
                         trailingContent = {
-                            IconButton(onClick = { store.rules = rules.filterIndexed { j, _ -> j != i }; m.changed() }) {
-                                Icon(Icons.Default.Delete, "Remove")
-                            }
+                            IconButton(onClick = { removing = i }) { Icon(Icons.Default.Delete, "Remove") }
                         })
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { adding = true }, enabled = cats.isNotEmpty()) { Text("+ App rule") }
-                    OutlinedButton(onClick = { adding = false }, enabled = cats.isNotEmpty()) { Text("+ Address rule") }
+                Text("Add a rule:", style = MaterialTheme.typography.titleSmall)
+                // a label too long for its button goes onto two lines; all three keep the same height
+                Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for ((kind, name, says) in listOf(Triple("app", "App", "Add an app rule"),
+                                                     Triple("address", "Address", "Add an address rule"),
+                                                     Triple("word", "Keyword", "Add a keyword rule")))
+                        OutlinedButton(onClick = { adding = kind }, enabled = cats.isNotEmpty(),
+                                       modifier = Modifier.weight(1f).fillMaxHeight().semantics { contentDescription = says },
+                                       contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)) {
+                            Text(name, textAlign = TextAlign.Center)
+                        }
                 }
             }
         }
     }
-    adding?.let { byApp -> AddRuleDialog(m, byApp) { adding = null } }
+    adding?.let { kind -> AddRuleDialog(m, kind) { adding = null } }
+    removing?.let { i -> rules.getOrNull(i)?.let { r ->
+        AlertDialog(
+            onDismissRequest = { removing = null },
+            title = { Text("Remove this rule?") },
+            text = { Text((if (r.byApp) "From ${r.shown}" else if (r.byWord) "Word: ${r.shown}" else r.shown) + "  →  " + r.category) },
+            confirmButton = { TextButton(onClick = {
+                store.rules = store.rules.filterIndexed { j, _ -> j != i }; removing = null; m.changed()
+            }) { Text("Remove") } },
+            dismissButton = { TextButton(onClick = { removing = null }) { Text("Cancel") } })
+    } }
 }
 
 @Composable
-fun AddRuleDialog(m: Model, byApp: Boolean, close: () -> Unit) {
+fun AddRuleDialog(m: Model, kind: String, close: () -> Unit) {
     val ctx = LocalContext.current
     val store = m.store
+    val byApp = kind == "app"
+    val byWord = kind == "word"
     val names = store.categories.map { it.name }
     var category by remember { mutableStateOf(store.live()?.name ?: names.firstOrNull()) }   // the live one to begin with
-    var address by remember { mutableStateOf("") }
+    // the address or keyword as a TextFieldValue, so a picked hint also puts the cursor at its end
+    var field by remember { mutableStateOf(TextFieldValue("")) }
+    val address = field.text
+    fun pick(site: String) { field = TextFieldValue(site, TextRange(site.length)) }
     var app by remember { mutableStateOf<Browsers.App?>(null) }
     var search by remember { mutableStateOf("") }
     // Both profiles' apps, with their names and icons, were read by the Model when the app started
@@ -559,15 +626,17 @@ fun AddRuleDialog(m: Model, byApp: Boolean, close: () -> Unit) {
     val recent = remember { store.recentApps.map { key -> Profiles.splitKey(key).let { (pkg, p) -> Browsers.App(pkg, m.appLabel(key), p) } } }
     fun key(a: Browsers.App) = Profiles.appKey(a.pkg, a.profile)
     fun same(a: Browsers.App, b: Browsers.App?) = b != null && a.pkg == b.pkg && a.profile == b.profile
+    val linksFrom = remember(m.log) { m.log.orEmpty().groupingBy { it.from }.eachCount() }
+    val recentKeys = remember { store.recentApps }
 
     // For an app rule the window is tall, and the app list takes all of it but the search box, one
     // line of hint and the one-line category choice.
     val tall = (LocalConfiguration.current.screenHeightDp * 0.65f).dp
     AlertDialog(
         onDismissRequest = close,
-        title = { Text(if (byApp) "Links from an app" else "Links to an address") },
+        title = { Text(if (byApp) "Links from an app" else if (byWord) "Links with a keyword" else "Links to an address") },
         text = {
-            Column(if (byApp) Modifier.height(tall) else Modifier) {
+            Column(if (byApp) Modifier.height(tall) else Modifier.verticalScroll(rememberScrollState())) {
                 if (byApp) {
                     OutlinedTextField(value = search, onValueChange = { search = it }, label = { Text("Find an app") }, singleLine = true)
                     val hints = listOfNotNull(if (recent.isNotEmpty() && search.isBlank()) "opened links lately first" else null,
@@ -576,9 +645,21 @@ fun AddRuleDialog(m: Model, byApp: Boolean, close: () -> Unit) {
                                                  style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
                     if (all == null) Text("Reading your apps...", modifier = Modifier.padding(vertical = 12.dp).weight(1f))
                     else {
-                        val shown = (if (search.isBlank()) recent else emptyList()) +
-                                    all.filter { a -> search.isBlank() || a.label.contains(search.trim(), ignoreCase = true) }
-                                        .filter { a -> search.isNotBlank() || recent.none { same(it, a) } }
+                        // nothing typed: every app, those that opened links lately first; typed: the
+                        // apps it starts (a word of) - most links in the log, then most recent, first -
+                        // then those with it anywhere in the name, as on Windows
+                        val shown = remember(search, all, linksFrom) {
+                            if (search.isBlank()) recent + all.filter { a -> recent.none { same(it, a) } }
+                            else {
+                                val pool = (recent + all).distinctBy { key(it) }
+                                fun name(a: Browsers.App) = a.label.removeSuffix(" (work)")
+                                val top = Sites.apps(search, pool, ::name,
+                                                     { a -> (linksFrom[key(a)] ?: 0) * 100 + recentKeys.indexOf(key(a)).let { if (it < 0) 0 else 50 - it } },
+                                                     limit = Int.MAX_VALUE)
+                                val inTop = top.toSet()
+                                top + pool.filter { it !in inTop && name(it).contains(search.trim(), ignoreCase = true) }
+                            }
+                        }
                         LazyColumn(Modifier.weight(1f)) {
                             items(shown, key = { key(it) }) { a ->
                                 Row(Modifier.fillMaxWidth().clickable { app = a }, verticalAlignment = Alignment.CenterVertically) {
@@ -590,24 +671,85 @@ fun AddRuleDialog(m: Model, byApp: Boolean, close: () -> Unit) {
                             }
                         }
                     }
+                } else if (byWord) {
+                    OutlinedTextField(value = field, onValueChange = { field = it }, singleLine = true,
+                                      label = { Text("Keyword - invoice") })
+                    SiteHints(m, address, ::pick)   // right under the box, so they show above the keyboard
+                    FieldHelp("A whole word: shop.com/invoice/12 and ?q=my+invoice, not invoices or ?invoice=1.")
+                    WordPreview(m, address)
                 } else {
-                    OutlinedTextField(value = address, onValueChange = { address = it }, singleLine = true,
-                                      label = { Text("Address - github.com") },
-                                      supportingText = { Text("Also every site under it. With a / it is looked for anywhere in the link.") })
+                    OutlinedTextField(value = field, onValueChange = { field = it }, singleLine = true,
+                                      label = { Text("Address - github.com") })
+                    SiteHints(m, address, ::pick)
+                    FieldHelp("Also every site under it. With a / it is looked for anywhere in the link.")
                 }
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                 CategoryChoice(m, category) { category = it }
             }
         },
         confirmButton = {
-            TextButton(enabled = category != null && (if (byApp) app != null else Router.cleanAddress(address).isNotEmpty()), onClick = {
+            TextButton(enabled = category != null && (if (byApp) app != null else if (byWord) Router.keyword(address) != null
+                                                      else Router.cleanAddress(address).isNotEmpty()), onClick = {
                 val rule = if (byApp) Rule(true, true, app!!.label, app!!.pkg, category!!, app!!.profile)
+                           else if (byWord) Rule(true, false, address.trim(), Router.keyword(address)!!, category!!, byWord = true)
                            else Rule(true, false, Router.cleanAddress(address), Router.cleanAddress(address).lowercase(), category!!)
                 store.rules = store.rules + rule
                 m.changed(); close()
             }) { Text("Add") }
         },
         dismissButton = { TextButton(onClick = close) { Text("Cancel") } })
+}
+
+// The sites you may be looking for, under an address or keyword box: your own (from the link log)
+// before you type, then yours and popular ones that start with what you typed (Sites). A tap puts
+// it in the box and closes the list until you type again.
+@Composable
+fun SiteHints(m: Model, typed: String, pick: (String) -> Unit) {
+    val used = remember(m.log) { Sites.used(m.log.orEmpty().filter { it.openedIn != "(copied)" }.map { it.opened }) }
+    var picked by remember { mutableStateOf<String?>(null) }
+    if (typed == picked) return
+    val count = remember(used) { used.toMap() }
+    val hints = remember(typed, used) { Sites.suggest(typed, used).filter { it != typed.trim().lowercase() } }
+    if (hints.isEmpty()) return
+    Column(Modifier.padding(top = 4.dp).semantics { liveRegion = LiveRegionMode.Polite }) {
+        if (typed.isBlank()) Text("Your sites", style = MaterialTheme.typography.labelMedium,
+                                  color = MaterialTheme.colorScheme.onSurfaceVariant)
+        hints.forEach { site ->
+            Row(Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = "Use this site") { picked = site; pick(site) }
+                    .heightIn(min = 48.dp).padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text(site, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                count[site]?.let { Text(if (it == 1) "1 link" else "$it links", style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
+        }
+    }
+}
+
+// The help line under a box, below its hints - as an OutlinedTextField's supportingText looks.
+@Composable
+fun FieldHelp(text: String) {
+    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+         modifier = Modifier.padding(start = 16.dp, top = 4.dp, end = 16.dp))
+}
+
+// Which links in the link log a keyword would match, by site - so a word that catches too much shows
+// before the rule is made.
+@Composable
+fun WordPreview(m: Model, keyword: String) {
+    val opened = m.log.orEmpty().filter { it.openedIn != "(copied)" }
+    val say = when {
+        Router.keyword(keyword) == null -> if (keyword.isBlank()) null else "At least 3 letters or digits."
+        opened.isEmpty() -> "No links in the link log to try it on."
+        else -> {
+            val hits = opened.filter { Router.hasWord(keyword, it.opened) }
+            val sites = hits.groupBy { Cleaner.hostOf(it.opened)?.removePrefix("www.") ?: "" }.toList().sortedByDescending { it.second.size }
+            "Would match ${hits.size} of the ${opened.size} links you opened" +
+                sites.take(6).joinToString("") { "\n${it.first} - ${it.second.size}" } +
+                if (sites.size > 6) "\nand ${sites.size - 6} more sites" else ""
+        }
+    }
+    if (say != null) Text(say, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
 }
 
 // "Open them in  [Brave ▾]" - one line, so the list above it keeps the room; tap it for the categories,
@@ -681,7 +823,7 @@ fun CopiedLinksCard(m: Model) {
     val store = m.store
     SectionCard("Copied links", "Links you copy, before you paste", info = listOf(
         "Why Accessibility: Android lets an app read what you copied only while it is on screen.",
-        "What it hears: only the system's own \"copied\" preview - never other apps. LinkPilot cannot go online.",
+        "What it hears: only the system's own \"copied\" preview - never other apps. Nothing is kept or sent anywhere.",
         "What changes: only a link on its own. What a password manager copies is left alone.",
         "Android 10-12: they give no sign of a copy - use the button or the tile there.",
         "Also on a tap: the \"Clean copied link\" tile (Shortcuts tab), or Share › Copy clean link.")) {
@@ -757,12 +899,20 @@ fun WhatGetsRemovedCard(m: Model, options: Cleaner.Options) {
 private fun siteGroup(p: Cleaner.Part): String {
     if (p.sites.isEmpty()) return "Every site"
     return when (val first = p.sites.split(' ')[0]) {
-        "youtube.com" -> "YouTube and Spotify"
+        "youtube.com", "youtu.be", "open.spotify.com" -> "YouTube and Spotify"
         "twitter.com" -> "X / Twitter"
+        "instagram.com" -> "Instagram"
+        "facebook.com" -> "Facebook"
+        "tiktok.com" -> "TikTok"
+        "reddit.com" -> "Reddit"
+        "linkedin.com" -> "LinkedIn"
+        "wikipedia.org" -> "Wikipedia"
+        "google.*" -> "Google"
         "amazon.*" -> "Amazon"
         "ebay.*" -> "eBay"
         "aliexpress.*" -> "AliExpress"
         "allegro.*" -> "Allegro"
+        "olx.*" -> "OLX"
         "temu.*" -> "Temu"
         "shein.*" -> "Shein"
         "etsy.com" -> "Etsy"
@@ -820,6 +970,9 @@ fun LogTab(m: Model) {
                 SwitchRow("Keep a log of links",
                           when { m.log == null -> "Reading..."; entries.isEmpty() -> "No links yet"; else -> "${entries.size} links" },
                           store.logOn) { store.logOn = it; m.changed() }
+                if (m.log != null && entries.isEmpty() && store.logOn)
+                    Text("Tap a link in any app - it shows here.", style = MaterialTheme.typography.bodyMedium,
+                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 TextButton(onClick = { clearing = true }, enabled = entries.isNotEmpty()) { Text("Clear log") }
             }
         }

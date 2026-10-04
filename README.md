@@ -16,9 +16,28 @@ and home-screen widgets to switch. It is in the [`android`](android) folder; see
 
 ## Install
 
-Needs Windows 10 or 11. Two ways — both give you the same program.
+Needs Windows 10 or 11. Three ways — all give you the same program.
 
-### With one command (easiest)
+### With the installer (easiest)
+
+On the [Releases page](https://github.com/Husarp/linkpilot/releases), download
+**`LinkPilotSetup-<version>.exe`** and run it. It installs LinkPilot for your account only (no
+administrator rights) and opens it; LinkPilot then walks you through the one step Windows leaves to
+you: choosing it as your default browser. The installer is not signed, so Windows may say *"Windows
+protected your PC"* — *More info → Run anyway*.
+
+- **Update:** LinkPilot checks GitHub for a newer version by itself (on to begin with; *About &
+  updates* tab → untick *Check for updates automatically* to stop it) and offers **Update** at the top
+  of its window. That downloads the new installer, closes LinkPilot, puts the new version in place and
+  starts it again. Your settings are kept. More under [Updates](#updates). Running a newer
+  `LinkPilotSetup-<version>.exe` yourself does the same: it says *Update*, and asks before closing a
+  running LinkPilot.
+- **Uninstall:** Settings → Apps → Installed apps → LinkPilot → Uninstall. If LinkPilot is your default
+  browser, it first opens Settings on the page of the browser you used before, to make that the
+  default again with one click. Your settings and link log are kept unless you tick *Also delete my
+  settings and link log* (they go to the Recycle Bin).
+
+### With one command
 
 Open **PowerShell** (press the Windows key, type `powershell`, press Enter), paste this and press
 Enter:
@@ -30,36 +49,45 @@ irm https://raw.githubusercontent.com/Husarp/linkpilot/main/get.ps1 | iex
 That's all. It downloads the **source code** of the latest release, builds the program on your PC
 with the C# compiler that is part of Windows — so no ready-made `.exe` is downloaded, and what runs
 is exactly the code you can read here — installs it for your account only (no administrator rights),
-and opens it. LinkPilot then walks you through the one step Windows leaves to you: choosing it
-as your default browser. [Read the script first](get.ps1) if you like — it is short.
+and opens it. [Read the script first](get.ps1) if you like — it is short.
 
 - **Update:** run the same command again, or press *Update* in the app. Your settings are kept.
-- **Uninstall:** Settings → Apps → Installed apps → LinkPilot → Uninstall. It opens Settings on
-  the page of the browser you used before, to make that the default again with one click, then
-  removes everything.
+- **Uninstall:** as with the installer.
 
 ### From the files
 
 1. On the [Releases page](https://github.com/Husarp/linkpilot/releases), download
    **`LinkPilot-<version>.zip`** — the ready-made program with everything needed to install and
-   remove it. (The release also has `BrowserSwitch.exe` on its own, the Android app, and the source code.)
+   remove it. (The release also has the installer, `BrowserSwitch.exe` on its own, the Android app,
+   and the source code.)
 2. Unzip it into a folder you will keep — Windows runs the program from there.
 3. Double-click **`Install.cmd`**. LinkPilot opens and walks you through the rest.
 
 The program is not signed, so Windows may say *"Windows protected your PC"* the first time — *More
 info → Run anyway*. More detail under [Setting it up](#setting-it-up).
 
+### What a release has
+
+| File | What it is |
+|---|---|
+| `LinkPilotSetup-<version>.exe` | the installer — install, update and uninstall in one window. The app's own updater downloads this one |
+| `LinkPilot-<version>.zip` | the ready-made program with `Install.cmd`, `install.ps1`, `uninstall.ps1`, `Back to normal.cmd`, this README and the licence |
+| `BrowserSwitch.exe` | the program on its own |
+| `LinkPilot-Android-<version>.apk` | the Android app (see [Install on Android](#install-on-android)) |
+| Source code (zip, tar.gz) | added by GitHub; what the one command builds from |
+
 ### What is the difference?
 
-Both end with the same `BrowserSwitch.exe` on your PC. The difference is **where it is made**:
+All three end with the same `BrowserSwitch.exe` on your PC. The difference is **where it is made**
+and where it goes:
 
-| | One command | From the files |
-|---|---|---|
-| The program | built **on your PC** from the source code, by the compiler that is part of Windows | built by the author, downloaded ready-made |
-| What you trust | the code, which you can read here | that the download matches the code |
-| "Windows protected your PC" | no — nothing ready-made was downloaded | may appear once, as for any unsigned program |
-| Where it goes | `%LOCALAPPDATA%\Programs\LinkPilot`, for your account | any folder you choose |
-| Updating | the same command again, or *Update now* in the app | a new zip, or *Update now* in the app |
+| | Installer | One command | From the files |
+|---|---|---|---|
+| The program | built by the author, downloaded ready-made | built **on your PC** from the source code, by the compiler that is part of Windows | built by the author, downloaded ready-made |
+| What you trust | that the download matches the code | the code, which you can read here | that the download matches the code |
+| "Windows protected your PC" | may appear once, as for any unsigned program | no — nothing ready-made was downloaded | may appear once |
+| Where it goes | `%LOCALAPPDATA%\Programs\LinkPilot`, for your account | the same | any folder you choose |
+| Updating | *Update* in the app | the same command again, or *Update* in the app | a new zip, or *Update* in the app |
 
 ## Install on Android
 
@@ -74,9 +102,10 @@ Windows program.
 3. Open **LinkPilot**. It walks you through the rest, like on Windows: your choices, then making it
    the default browser (Android's own question — no app can do this without you).
 
-- **Update:** Home › About › **Check for updates on GitHub** opens the Releases page (the app cannot
-  go online by itself — it has no internet permission). Download the newer APK and install it over
-  the old one; your settings are kept.
+- **Update:** the app checks GitHub by itself when it opens or you come back to it (at most every 5
+  minutes; switch it off, or tap **CHECK NOW**, in Home › Updates). When there is a newer version, tap
+  **UPDATE**: it downloads inside the app, Android asks once to let LinkPilot install apps, then asks
+  you to confirm. Your settings are kept. More under [Updates](android/README.md#updates).
 - **Uninstall:** as any app — long-press LinkPilot › App info › Uninstall. Android then asks which
   browser should be the default again.
 
@@ -87,25 +116,32 @@ What it does, and what differs from Windows: [LinkPilot for Android](android/REA
 - **Categories** — Work, Home, School… each pointing at a browser and profile; one click switches.
 - **The dock** — lives next to the clock, with an icon per category if you like, and a short note
   after every switch.
-- **Keyboard shortcuts** — one per category, next / previous, and rules on / off.
-- **Link rules** — links from chosen apps (Signal → Work) or to chosen sites (github.com → Home) go
-  to their own category, whatever is live. A ready-made list of ~175 popular apps to pick from.
-- **Link cleaning** — tracking parts (`utm_source`, `fbclid`, YouTube's `si`…) taken out of links, and
-  redirects (`google.com/url?q=…`, Outlook Safe Links) skipped, so links go straight to the page.
-  If you like, a link you **copy** is cleaned too, so you paste the clean one.
+- **Keyboard shortcuts** — one per category, next / previous, and rules on / off. With the **smart
+  queue**, Next goes back to the category used before — one press flips back, like Alt+Tab.
+- **Link rules** — links from chosen apps (Signal → Work), to chosen sites (github.com → Home) or with
+  a chosen word in them (invoice → Work) go to their own category, whatever is live. A ready-made list
+  of ~175 popular apps to pick from, plus the programs on your PC.
+- **Ask every time** — a category that opens no browser of its own: each link it gets shows a small
+  window next to the mouse asking which category to open it in.
+- **Link cleaning** — 314 tracking parts (`utm_source`, `fbclid`, YouTube's `si`, the shops' own…)
+  taken out of links, and 34 redirects (`google.com/url?q=…`, Outlook Safe Links, affiliate links)
+  skipped, so links go straight to the page. If you like, a link you **copy** is cleaned too, so you
+  paste the clean one.
 - **Link log** — every link: which app it came from, where it opened, and what was changed.
+- **A short guide** after the setup — your categories, how you switch, rules for your apps — each
+  screen with a good answer filled in already. It can be taken again any time.
 - **Web page files** (`.htm`, `.html`) show the browser they will open in.
 - **Offline and private** — it never sends your links anywhere. It only goes online to check for a
-  newer version, and only if you turn that on.
+  newer version (you can switch that off) and to download it when you press *Update*.
 
 ## Privacy and security
 
 **It works offline.** LinkPilot never sends your links, categories, rules or the link log
 anywhere, and has no account, ads, tracking or analytics. The one time it connects to the internet
-is to ask GitHub whether a newer version exists — only when you press *Check now*, or once a day if
-you allow it (off unless you turn it on, in the setup or on the *About & updates* tab) — and, when
-you press *Update now*, to download the new version's source code. GitHub then sees only what any
-visit to a website shows, such as your internet address. Nothing about your links is sent.
+is to ask GitHub whether a newer version exists — when it starts and when you open its window, at
+most every 5 minutes (switch that off in the setup or on the *About & updates* tab), or when you press
+*Check now* — and, when you press *Update*, to download the new version's installer. GitHub then sees
+only what any visit to a website shows, such as your internet address. Nothing about your links is sent.
 
 **What it keeps, and where** — all of it in plain text, in its own folder, on your PC only:
 
@@ -212,6 +248,10 @@ shortcuts**. They then work anywhere, as long as the dock is running.
 - **In next / previous** — a tick per category. Next and Previous only stop at the ticked ones
   (all of them to begin with); a category's own shortcut works either way. If the live category is
   not ticked, they still move on from where it sits in the list.
+- **Smart queue** (on to begin with) — Next and Previous go by recent use, like Alt+Tab: Next goes
+  back to the category used before, so one press flips back, and Previous to the one used longest
+  ago. Presses close together (within about three seconds) walk on through the rest instead of
+  flipping between the same two. Untick it and they go in list order.
 - **Not every key can be used.** Logitech's **Easy-Switch keys** (1, 2, 3 — they choose which paired
   device the keyboard talks to) are handled inside the keyboard itself and never reach the PC; that
   is also why Logi Options+ cannot reassign them. The top-row keys and the ones at the top right
@@ -229,34 +269,82 @@ shortcuts**. They then work anywhere, as long as the dock is running.
 Some links should always go to the same place, whatever is live: links from Signal to Work, GitHub
 links to Home. In the window, the **Rules** tab.
 
-- **Two kinds.** *comes from an app* — the program the link was clicked in; *address has* — a site
+- **Three kinds.** *comes from an app* — the program the link was clicked in; *address has* — a site
   like `github.com`, which also covers the sites under it (`gist.github.com`), or any text with a `/`
-  in it (`github.com/my-company`), looked for anywhere in the link.
+  in it (`github.com/my-company`), looked for anywhere in the link; *address has the word* — a
+  keyword (**Add keyword…**), see below.
+- **Keyword rules.** `invoice` matches a whole word in the site, the path or a value after the `?` —
+  `shop.com/invoice/12`, `?q=my+invoice` — but never part of a word (`invoices`) nor a parameter's
+  name (`?invoice=1`). Several words must come one after another: `pull request` matches
+  `…/pull-request`. At least 3 letters or digits; big or small letters do not matter. While you type,
+  the dialog shows which of the sites you opened (from the link log) it would match, so a word that
+  catches too much shows before it is saved.
+- **Suggestions as you type.** Typing an address shows up to 8 sites: the ones you opened (from the
+  link log, the most used first), then about 180 well-known ones (global and Polish — the same list
+  as on Android). Only sites that start with what you typed, or one of whose parts does: `re` finds
+  reddit.com, never youtube.com; `goo` also finds docs.google.com. Before you type: your own sites.
+  Click one, or **Down** and **Enter**; **Esc** closes the list. In a keyword rule they show on
+  **Down**, so the list of what it would match stays in view. *Add apps…* does the same for apps: the
+  ones you use first (links opened, opened links lately, running now), then the rest — `code` finds
+  Visual Studio Code; picking one ticks it.
+- **Sites you opened.** *Add address…* lists the sites in your link log — how many links, when the
+  last one was, and which already have a rule (greyed). Click one to use it; click a column's title to
+  sort by it.
 - **Rules win over the live category.** They are checked from the top, and the first that matches
   decides — **Move up / Move down** set the order. A link no rule matches goes to the live category
   as always. A link sent by a rule shows no note.
 - **A tick per rule** keeps it but stops it. A rule whose category has been deleted is skipped.
 - **Edit…** (or double-click a rule) changes the profile its links go to — and, for an address
   rule, the address.
-- **One rule per app or address.** Adding (or editing into) one that already has a rule asks which
-  stays: *Replace the older rule* — the new one takes its place in the order — or *Keep the older
-  rule*.
-- **The list** shows an app rule under *When a link comes from* and an address rule under *or its
-  address has* — one list, so the order counts across both. An app rule shows its app's icon (when
-  the program can be found), and *Goes to profile* the browser's icon as that profile shows it.
+- **One rule per app, address or keyword.** Adding (or editing into) one that already has a rule asks
+  which stays: *Replace the older rule* — the new one takes its place in the order — or *Keep the
+  older rule*.
+- **The list** shows an app rule under *When a link comes from*, and an address or keyword rule
+  under *or its address has* (a keyword as *the word "invoice"*) — one list, so the order counts across
+  all of them. An app rule shows its app's icon (when the program can be found), and *Goes to
+  profile* the browser's icon as that profile shows it. With fewer than two categories the list says
+  to make another first — a rule needs somewhere else to send links.
 - **Rules on / off — one switch for all of them**, reachable three ways: the **Use rules** tick at the
-  top of the window, *Use rules* in the dock's right-click menu, and its own **keyboard shortcut**
+  top of the Rules tab, *Use rules* in the dock's right-click menu, and its own **keyboard shortcut**
   (on the *Shortcuts* tab, suggested Ctrl+Alt+R, or the nearest free one). Off, every link simply opens in
   the live category — switch category and all links follow. The note says which it is now.
 - **Add apps…** opens a ready-made list of about 175 popular apps in groups — chat & social, work &
   office, email, AI assistants, notes & study, gaming, development, music & video, creative, files &
-  sync, utilities — with a search box. Tick any number, choose their category, **Add**. **Opened
-  links lately** lists the programs that really opened links on this PC, and **Browse for a
-  program…** takes any other.
+  sync, utilities — with a search box. Tick any number, choose their category, **Add**. Above the
+  built-in groups, four come from your own PC:
+  - **Opened links lately** — the programs that really opened links here;
+  - **Opened the most links** — the same from the link log, the busiest first, with how many links
+    each opened;
+  - **Running now** — every program open at the moment: open the app first, then find it here;
+  - **On this PC** — every program in the Start menu.
+
+  The search looks through all of them, so an app the built-in list does not know can be found by
+  name without looking for its program file. **Browse for a program…** takes any other.
 - **How the app is known:** when a program opens a link, Windows starts LinkPilot from inside
-  it, so LinkPilot asks Windows who started it. A few apps — mostly from the Microsoft Store —
-  hand links over through a Windows go-between; their rules cannot see them, so use an address rule
-  for those. *Opened links lately* shows what really opened your links.
+  it, so LinkPilot asks Windows who started it. Some apps start a Windows helper just to open the
+  link — NetBird uses `rundll32`, others `cmd` — and then LinkPilot looks past it to the app that
+  started it, so an app rule for that app works. (A rule made for `rundll32.exe` itself still wins.)
+  A few apps — mostly from the Microsoft Store — hand links over through a Windows go-between that
+  hides them; their rules cannot see them, so use an address rule for those. *Opened links lately*
+  shows what really opened your links.
+
+## Ask every time
+
+A category can open no browser of its own and **ask** instead. On the Categories tab, select the
+category, pick **Ask every time** at the bottom of the browsers on the right, and press *Use this*
+(the short guide can make one for you, called *Ask*). Handy while many links come that no rule covers
+yet.
+
+- Each link it gets shows a small window **next to the mouse**: the link's site, and every category
+  with a browser, one row each with its icon and how many links went to it and when the last did.
+  Pick one and the link opens there.
+- **Enter**, a double-click or a row's number **1–9** opens; **Esc** or *Don't open* opens nothing —
+  the link log keeps it as *(not opened)*, so *Open again* there can still send it.
+- **Sort by** *Name*, *Most used* or *Recently used*; the choice is kept.
+- **Remember for github.com** also adds an address rule, so that site goes straight to the one you
+  picked from then on.
+- It works as the live category, and as the category of a rule (Signal → Ask every time). It needs
+  at least one other category with a browser.
 
 ## Link cleaning
 
@@ -265,15 +353,21 @@ Many links carry extra parts that only say where the click came from — `utm_so
 `google.com/url?q=<the real link>`, Outlook's Safe Links, Facebook's `l.php`. The **Link cleaning** tab
 takes both out before the link is handed on:
 
-- **Skip redirects** — 15 middlemen whose links carry the real one inside (Google search results,
-  Gmail and Docs, Google Ads, Outlook and Teams Safe Links, Facebook, Messenger, Instagram, YouTube,
-  Steam, LinkedIn, DuckDuckGo, VK, Slack, Reddit). The real link opens directly.
-- **Remove tracking** — 110 known tracking parts: `utm_*`, `fbclid`, `gclid` and the other ad
-  click IDs, newsletter tracking, and on their own sites YouTube's and Spotify's `si`, and the
-  **online shops'** tracking, share and affiliate parts — Amazon, eBay, AliExpress, Allegro, Temu,
-  Shein, Etsy, Walmart, Ceneo (mostly from [ClearURLs](https://clearurls.xyz)' rules). The product
-  itself stays in the link. Only parts known to be tracking are removed, and everything else in
-  the link stays exactly as it was, so links keep working.
+- **Skip redirects** — 34 middlemen whose links carry the real one inside: Google search results,
+  Gmail and Docs, Google Ads, the Google app's shared links, Outlook and Teams Safe Links, Facebook,
+  Messenger, Instagram, YouTube, Steam, LinkedIn, DuckDuckGo, VK, Slack, Reddit (and its emails),
+  Tumblr, eBay, Adjust app links — and 13 **affiliate networks**, the shopping links that pay
+  whoever sent them (Rakuten, Awin, Tradedoubler, Admitad, CJ, ShareASale, Skimlinks, VigLink, Digidip,
+  Webgains, idealo, Partner-ads, FlexOffers). The real link opens directly.
+- **Remove tracking** — 314 known tracking parts: `utm_*`, `fbclid`, `gclid` and the other ad
+  click IDs, newsletter and email tracking (Mailchimp, HubSpot, Klaviyo, Marketo, Salesforce…),
+  analytics such as Matomo and Adobe; on their own sites the share and tracking parts of Google
+  search, YouTube, Spotify, TikTok, Instagram, Facebook, X, LinkedIn, Reddit and Wikipedia; and the
+  **online shops'** tracking, share and affiliate parts — Amazon, eBay, AliExpress (search results
+  included), Allegro, Temu, Shein, Etsy, Walmart, OLX, Ceneo (mostly from the
+  [ClearURLs](https://clearurls.xyz), AdGuard and Brave lists). The product itself stays in the link,
+  and so does what you searched for on Google. Only parts known to be tracking are removed, and
+  everything else in the link stays exactly as it was, so links keep working.
 - Both are on to begin with; every part and middleman has its own tick, and **Add a part…** adds
   your own. **Try a link** shows what any link becomes.
 - **Clean copied links too** (off to begin with) — when you copy a link — YouTube's *Copy link*, a
@@ -286,33 +380,49 @@ takes both out before the link is handed on:
 
 When a link you open had something taken out, a short note says so — *Link cleaned*, and what went
 — while the page opens. It happens before the rules look at the link, so a rule for `github.com` also
-catches a Google link to GitHub. Two things it cannot do: a link clicked *inside* a browser never reaches LinkPilot —
-Google's own result links included — so that needs a browser extension; and short links (`bit.ly`,
-`t.co`) are not followed, because only their server knows where they lead and LinkPilot does
-not go online.
+catches a Google link to GitHub. Two things it cannot do: a link clicked *inside* a browser never
+reaches LinkPilot — Google's own result links included — so it is not cleaned; and short links
+(`bit.ly`, `t.co`) are not followed, because only their server knows where they lead and LinkPilot
+does not look links up online.
 
 ## Link log
 
 The **Link log** tab (also in the dock's right-click menu) lists every link LinkPilot handed
 on: when, which app it came from, where it opened and why ("Work — rule: comes from Signal"), and
 whether it was changed. Select one to see it in full — with the link as it came, if it was changed.
-**Copy link**, **Open again**, **Clear log**. The list updates by itself as links come in.
+**Copy link**, **Open again**, **Clear log**. The list updates by itself as links come in. A link left
+unopened in the *Ask every time* window shows as *(not opened)*; *Open again* sends it through again.
 
 The log stays on this computer only, in `link-log.txt` next to the program, and keeps the newest
 1000 links. **Keep a log of links** switches it off.
 
 ## Updates
 
-On the *About & updates* tab: **Check now** asks GitHub whether a newer version exists; tick **Check
-for updates automatically** to have it asked once a day (off to begin with). When one exists, **Update
-now** downloads its source code, builds it on your PC and restarts LinkPilot, keeping your
-settings — the same as running the install command again. See [Privacy and security](#privacy-and-security)
-for what that connection involves.
+LinkPilot asks GitHub whether a newer version exists by itself — on to begin with: 30 seconds after
+it starts, every 6 hours while it runs, and whenever its window opens or comes to the front — at most
+every 5 minutes. A check that fails says nothing (it is almost always "no internet"). Untick **Check
+for updates automatically** on the *About & updates* tab (or among the setup screen's choices) to stop
+that; **Check now** there always asks, gives up after 10 seconds, and says in words what went wrong
+if it cannot. **GitHub** there opens the releases page.
+
+When there is a newer version, a strip at the top of the window says so, with **Update** and **✕**
+(✕ hides it until LinkPilot next starts). The dock mentions it once too, and its menu has *Update to
+X…*. **Update** (or **Get update** on *About & updates*) downloads `LinkPilotSetup-<version>.exe` from
+GitHub, with the progress shown, runs it and closes LinkPilot: the installer shows only its progress,
+puts the new version in place, keeps your settings, starts LinkPilot again and closes by itself; a
+short note then says *LinkPilot updated*. If the install fails, the installer puts the previous
+version back and starts it. If the download fails, LinkPilot says why, with **Try again** and
+**GitHub** (the release page) — nothing opens by itself. The downloaded installer is deleted the next
+time LinkPilot starts. A copy that is a git clone is updated with `git pull` and `build.cmd` instead.
+See [Privacy and security](#privacy-and-security) for what that connection involves.
+
+Under *More* on the same tab: **Take the short guide again** and **Show the setup screen again** (see
+[Setting it up](#setting-it-up)).
 
 ## The window
 
-Click the dock icon, or **Switch browser** on your Desktop. Each tab has one round **ⓘ** next to its
-top heading: click it and a panel explains every part of that tab — each section by name, in short
+Click the dock icon, or **Switch browser** on your Desktop. Each tab opens with its name and one line
+saying what it is for, and one round **ⓘ** next to that heading: click it and a panel explains every part of that tab — each section by name, in short
 points; a click on the ⓘ again, or anywhere else, closes it. While LinkPilot is not the default
 browser, the window opens on the **setup screen** instead (see [Setting it up](#setting-it-up)).
 
@@ -321,16 +431,19 @@ browser, the window opens on the **setup screen** instead (see [Setting it up](#
   which) — and a yellow strip offers to set it up. It checks again whenever the window comes to the
   front.
 - **Tabs:**
-  - **Categories** — your categories on the left, each with its icon and what it opens in; the
-    live one is tagged **LIVE**; below them **Show in dock** and **Dock icon…**. On the right,
-    every browser on this computer with its profiles. Nothing is hard-coded: browsers come from
+  - **Categories** — *Your categories* on the left, each with its icon, what it opens in, its
+    shortcut and whether it is in the dock; the live one is tagged **LIVE**; below them **Show in
+    dock** and **Dock icon…**. With none yet, the list says how to start. On the right, *Browsers and
+    profiles on this PC* — every browser with its profiles, and last, **Ask every time** (see
+    [Ask every time](#ask-every-time)). Nothing is hard-coded: browsers come from
     the Windows registry, Firefox profiles from `profiles.ini`, and Chrome / Edge / Brave /
     Vivaldi profiles from each browser's own `Local State` file, so the names shown are the names
     you gave them. Each profile shows its own picture where the browser keeps one, and which of
     your categories use it (`Work (Profile 2)  ←  Work`).
   - **Rules**, **Shortcuts**, **Link cleaning**, **Link log**, **About & updates** — see their
     sections above.
-- **Bottom** — one button per category: click one and links go there from that moment on.
+- **Bottom** — *Switch to:* one button per category, with its icon, the live one filled blue: click
+  one and links go there from that moment on.
 
 To set a category up: select it on the left, select a profile on the right, press **Use this for …**.
 
@@ -342,17 +455,49 @@ To set a category up: select it on the left, select a profile on the right, pres
 | **LinkPilot** (Start menu) | opens the same window |
 | **LinkPilot** (Startup folder) | starts the dock when you sign in. Delete it to stop that — nothing else depends on it |
 | **Back to normal.cmd** | the panic button — every link goes to your original default browser: no category is live any more, and the rules are switched off too. Nothing is uninstalled and no category or rule is lost |
-| `config.txt` | your categories, rules and settings, in plain text. The window writes it; you can edit it by hand |
+| `config.txt` | your categories, rules and settings, in plain text. The window writes it; you can edit it by hand (see [config.txt](#configtxt)) |
 | `file-icons\` | the icon web page files show right now — drawn after each switch; safe to delete |
 | `recent-apps.txt` | the programs that opened links lately — offered when you add app rules |
 | `link-log.txt` | the link log — the newest 1000 links; stays on this computer |
 | **Install.cmd** | double-click to register LinkPilot with Windows — runs `install.ps1` |
 | `install.ps1` | adds LinkPilot to the Windows list of browsers |
 | `uninstall.ps1` | removes it completely — after making your previous browser the default again |
+| **Uninstall LinkPilot.exe** | put there by the installer — what Settings → Apps runs to remove LinkPilot (the same window as the installer) |
 | `get.ps1` | the one-command installer and updater (see [Install](#install)) |
 | `build.cmd` | rebuilds the program |
 | `BrowserSwitch.ico` | the icon — two opposite arrows — built into the exe |
 | `LICENSE` | MIT — use, change and share it freely, keeping the copyright notice |
+
+## config.txt
+
+One setting per line, `name=value`, in plain text. The window keeps it up to date; you can edit it by
+hand too, and the dock picks the change up by itself. A missing line means the setting as it is to
+begin with.
+
+| Line | What it is |
+|---|---|
+| `category=Work\|C:\…\brave.exe\|--profile-directory="Profile 2"\|Brave - Work` | a category: name, browser, what it is started with, what it shows. Up to six more after it: in the dock (`1`), the dock icon, its shortcut, the shortcut suggested, `no` if next / previous skip it, `off` if its shortcut is off |
+| `category=Ask\|(ask)\|\|Ask every time` | an *Ask every time* category: `(ask)` in place of a browser |
+| `active=Work` | the live category |
+| `recent-live=Work\|Home\|School` | the categories by recent use, the live one first — the smart queue's order |
+| `fallback=` | the browser links went to before LinkPilot, recorded at install |
+| `rule=on\|app\|Signal\|Signal.exe\|Work` | a rule: `on` or `off` \| `app`, `address` or `word` \| shown as \| matches \| category. For `word`, it matches the keyword's words in small letters, one space between: `rule=on\|word\|Pull-Request\|pull request\|Work` |
+| `rules=on` | `off`: every rule kept, none used |
+| `rules-key=`, `default-rules-key=`, `rules-key-on=` | the shortcut that turns rules on and off, the one suggested, and `no` if it is switched off |
+| `shortcuts=off` | `on`: keyboard shortcuts work |
+| `next=`, `previous=`, `default-next=`, `default-previous=`, `next-on=`, `previous-on=` | the next / previous shortcuts, the ones suggested, and `no` if one is switched off |
+| `smart-queue=on` | `off`: next / previous go in list order instead of by recent use |
+| `ask-sort=most` | how the *Ask every time* window sorts: `most` (used), `name` or `recent` |
+| `docktips=name` | `switch`: dock icons say *Switch to Work* when hovered |
+| `fileicon=page` | the look of `.htm` / `.html` files: `page`, `browser` or `own` |
+| `taskbar=on` | `off`: no taskbar button, the window lives in the dock |
+| `clean=on`, `unwrap=on` | remove tracking parts; skip redirects |
+| `clean-copied=off` | `on`: clean a link when it is copied, too |
+| `clean-off=`, `unwrap-off=` | one line per tracking part or redirect switched off |
+| `clean-add=ref\|example.com` | a tracking part of your own, and where (empty: everywhere) |
+| `log=on` | keep the link log |
+| `check-updates=on` | `off`: ask GitHub for a newer version only when you press *Check now* |
+| `setup=done`, `closed-once=yes`, `version=` | the setup screen was seen; the note about closing the window was shown; the version that last ran |
 
 ## Setting it up
 
@@ -379,17 +524,42 @@ is not the default browser — in three steps (Back and Skip on the left, the bl
 1. **How it works** — why it has to be the default browser (every link must pass through it, and
    Windows sends links only to the default browser), and why it can be trusted: fully offline,
    sends nothing, made for personal use, open, easy to undo.
-2. **Your choices** — clean links (on), clean copied links too (off), keep a log of links (on),
-   check for updates automatically (off). All can be changed later on their tabs.
+2. **Your choices** — clean links (on), with a real link shown before and after cleaning; clean
+   copied links too (off), keep a log of links (on), check for updates automatically (on). All can be
+   changed later on their tabs.
 3. **Make it your default browser** — *Open Windows Settings* opens on LinkPilot's own page;
    press *Set default*; the setup screen notices by itself. If LinkPilot already is the
    default, this step just says so.
 
+No program or command can make this choice for you — Windows ignores them, which is what keeps
+programs from taking over your browser.
+
 Then a big **You're all set!** — and if you have no category yet, the browser you used until now
 becomes the first one, live (for example **Firefox**), so links keep going exactly where they went.
-*Finish* opens the main window. No program or command can
-   make this choice for you — Windows ignores them, which is what keeps programs from taking over
-   your browser.
+**Set them up →** goes on to the short guide; *Finish - I'll look around myself* opens the main
+window instead.
+
+### The short guide
+
+A few optional screens — about a minute — each one decision with a good answer filled in already:
+press the blue button on every screen and the setup is good. *Next* saves what the screen shows,
+*Skip* saves nothing, and a screen that does not apply is passed over.
+
+1. **Your categories** — one tick per browser profile on this PC, each with a name suggested (the
+   name you gave the profile, or the browser's own). A profile a category already uses shows that
+   category's name instead.
+2. **How you switch** — keyboard shortcuts on, with the keys suggested and whether each is free;
+   the smart queue; and an icon per category in the dock.
+3. **When no rule decides** — *Open in the live category*, or *Ask every time* (see
+   [Ask every time](#ask-every-time)). Only with two categories or more.
+4. **Rules for your apps** — up to six apps that opened links on this PC (or are running now) and
+   have no rule yet, each with a category guessed for it — Teams to a category called Work, a game
+   to Home; none is ticked, so tick the ones you want. *More apps…* opens the full list. Only with two
+   categories or more.
+5. **Where things live** — one line per tab, and *Finish*.
+
+**To take it again:** *About & updates* tab → **Take the short guide again**. **Show the setup screen
+again**, just under it, brings back the three steps above.
 
 By hand, in Settings → Apps → Default apps there are two ways:
 
@@ -430,6 +600,9 @@ and `--dry` reports exactly what a real click would do, so the two can never dis
    before);
 4. otherwise the first browser Windows lists.
 
+If step 1 or 2 lands on an *Ask every time* category, the small window asks which category's browser
+to use (and `--dry` just says it would ask); *Don't open* or Esc opens nothing.
+
 Anything unexpected is written to `errors.log`. Tested against: no config at all, a config with no
 categories, a live category with no browser chosen, and a category pointing at a browser that has
 been deleted — all four fall through correctly.
@@ -437,7 +610,7 @@ been deleted — all four fall through correctly.
 Two levels of undo, on purpose:
 
 - **Pause** — `Back to normal.cmd`. Instant, nothing removed; pick a category and tick *Use rules*
-  to switch back on.
+  on the Rules tab to switch back on.
 - **Remove** — Settings → Apps → Installed apps → LinkPilot, or run `uninstall.ps1`. While
   LinkPilot is the default browser, it first opens Settings on the page of the browser you used
   before — one click on *Set default* (Windows lets no program do that click) — waits for it, and

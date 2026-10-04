@@ -6,7 +6,7 @@
 // cleaning (of copied links too), the link log, and asking GitHub for updates. The third is the one thing Windows leaves to
 // the person at the computer: making it the default browser - or, if it already is, says so. Then a
 // big "You're all set", which also makes a first category from the browser used so far if there is
-// none, and Finish.
+// none, and Finish - or, if you like, a short optional guide through the most useful settings (Guide.cs).
 //
 // Buttons as in any Windows setup: Back and Skip on the left, the blue button that goes on on the
 // right.
@@ -22,16 +22,21 @@ partial class SwitchForm
 {
     Panel setup;
     FlowLayoutPanel setupHow, setupChoices, setupDefault, setupDone;
+    readonly List<FlowLayoutPanel> setupPages = new List<FlowLayoutPanel>();   // step 1 is the first, the guide's from step 5
     Control setupTodo, setupAlready;      // step 3: the steps to take, or "already done"
     Button setupGo;                       // step 3's blue button: Open Windows Settings, or Next
-    Label setupStatus, setupNext;
+    Label setupStatus, setupNext, exampleAfter;
     CheckBox chooseClean, chooseCopied, chooseLog, chooseUpdates;
     bool madeFirstCategory;
     readonly Timer setupWatch = new Timer { Interval = 1500 };
     readonly List<Control> mainScreen = new List<Control>();   // hidden while the setup screen shows
 
     const int SetupWidth = 640;
-    static readonly Color Done = Color.FromArgb(16, 124, 65);
+    static readonly Color Done = Ui.Ok;
+
+    // the example under Clean links on step 2 - the same link the Link cleaning tab tries
+    static readonly Font ExampleFont = new Font("Segoe UI", 8.25F), ExampleBold = new Font("Segoe UI", 9F, FontStyle.Bold);
+    const string ExampleLink = "https://www.google.com/url?q=https://www.youtube.com/watch%3Fv%3DdQw4w9WgXcQ%26si%3DxYz123&sa=D&utm_source=chat";
 
     // Shows the setup screen over everything else, on its first step. Called when the window opens
     // on a first start or while LinkPilot is not the default browser; also from About & updates.
@@ -42,19 +47,22 @@ partial class SwitchForm
         chooseClean.Checked = Config.CleanOn && Config.UnwrapOn;
         chooseCopied.Checked = Config.CopyCleanOn;
         chooseLog.Checked = Config.LogOn;
-        chooseUpdates.Checked = Config.UpdateCheck;
+        chooseUpdates.Checked = Config.CheckUpdates;
+        ShowExample();
+        madeFirstCategory = false;
         SetupStep(1);
         setup.Visible = true;
     }
 
     // One of the three steps - the third starts watching for Windows to report the change - or, as
-    // step 4, "You're all set".
+    // step 4, "You're all set"; 5 to 9 are the guide's screens.
     void SetupStep(int step)
     {
-        setupHow.Visible = step == 1;
-        setupChoices.Visible = step == 2;
-        setupDefault.Visible = step == 3;
-        setupDone.Visible = step == 4;
+        PauseKeys(step == 6);    // the guide's keys show whether they are free - not held by the dock itself
+        if (step <= 4) guideTrail.Clear();
+        guideStep = step;
+        if (step >= 5) BuildGuidePage(step);   // only now: it follows what the screen before it made
+        for (int i = 0; i < setupPages.Count; i++) setupPages[i].Visible = i + 1 == step;
         setup.AutoScrollPosition = new Point(0, 0);
         setupStatus.ForeColor = SystemColors.GrayText;
         setupStatus.Text = "";
@@ -67,7 +75,7 @@ partial class SwitchForm
         }
         if (step == 4)
         {
-            madeFirstCategory = MakeFirstCategory();
+            if (MakeFirstCategory()) madeFirstCategory = true;
             setupNext.Text = WhatNext();
         }
         if (step == 3 && !IsDefaultBrowser) setupWatch.Start(); else setupWatch.Stop();
@@ -79,7 +87,7 @@ partial class SwitchForm
         Config.CleanOn = Config.UnwrapOn = chooseClean.Checked;
         Config.CopyCleanOn = chooseCopied.Checked;
         Config.LogOn = chooseLog.Checked;
-        Config.UpdateCheck = chooseUpdates.Checked;
+        Config.CheckUpdates = chooseUpdates.Checked;
         Save();
     }
 
@@ -93,6 +101,7 @@ partial class SwitchForm
         if (!Config.SetupDone) { Config.SetupDone = true; Save(); }
         Reload();
         CheckDefault();
+        PauseKeys(tabs.SelectedTab == shortcutsPage);
     }
 
     // With no category yet, the browser used until now becomes the first one - live - so links keep
@@ -126,14 +135,13 @@ partial class SwitchForm
         setupChoices = Column();
         setupDefault = Column();
         setupDone = Column();
-        setup.Controls.Add(setupHow);
-        setup.Controls.Add(setupChoices);
-        setup.Controls.Add(setupDefault);
-        setup.Controls.Add(setupDone);
+        setupPages.AddRange(new[] { setupHow, setupChoices, setupDefault, setupDone });
+        setupPages.AddRange(GuidePages());
+        foreach (var page in setupPages) setup.Controls.Add(page);
         setup.Resize += delegate
         {
             int left = Math.Max(16, (setup.ClientSize.Width - SetupWidth) / 2);
-            setupHow.Left = setupChoices.Left = setupDefault.Left = setupDone.Left = left;
+            foreach (var page in setupPages) page.Left = left;
         };
 
         // ---- step 1: how it works ----
@@ -148,13 +156,14 @@ partial class SwitchForm
             "you from programs that would take over your browser. Step 3 shows you where."));
 
         setupHow.Controls.Add(Heading("Why you can trust it"));
-        var trust = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, BackColor = Color.FromArgb(243, 247, 252),
+        var trust = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, BackColor = Ui.Soft,
                                            Padding = new Padding(12, 8, 12, 2), Margin = new Padding(0, 0, 0, 10),
                                            Width = SetupWidth, MaximumSize = new Size(SetupWidth, 0) };
         trust.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 185));
         trust.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         Trust(trust, "Fully offline", "Everything works without the internet. The only time LinkPilot goes online is " +
-              "to ask GitHub for a newer version - and only if you allow it in the next step.");
+              "to ask GitHub for a newer version, and to download it when you press Update - you can switch the check " +
+              "off in the next step.");
         Trust(trust, "Sends nothing", "No account, no ads, no tracking, nothing collected. Your links, settings and the " +
               "link log stay in its own folder on this PC.");
         Trust(trust, "Made for personal use", "A small project made for private use, and shared freely - nothing is sold, " +
@@ -163,7 +172,7 @@ partial class SwitchForm
         Trust(trust, "Easy to undo", "Your other browsers stay as they are. Make one of them the default again at any " +
               "time, or uninstall LinkPilot.");
         setupHow.Controls.Add(trust);
-        var next = PrimaryButton("Next  →");
+        var next = Ui.Primary("Next  →");
         next.Click += delegate { SetupStep(2); };
         setupHow.Controls.Add(NavRow(next, Link("Skip setup", LeaveSetup)));
 
@@ -172,15 +181,17 @@ partial class SwitchForm
         chooseClean = Choice(setupChoices, "Clean links", "Takes tracking out of links - utm_source, fbclid, YouTube's si... - and " +
                              "skips redirects such as google.com/url?q=..., so the page opens directly. Only parts known to be " +
                              "tracking are removed, so links keep working.");
+        setupChoices.Controls.Add(CleanExample());
+        chooseClean.CheckedChanged += delegate { ShowExample(); };
         chooseCopied = Choice(setupChoices, "Clean copied links too", "When you copy a link on its own - YouTube's Copy link, " +
                               "a link from a chat - it is cleaned the same way right away, so you paste the clean link. Text " +
                               "with a link inside, and anything a password manager copies, is left alone. Nothing is kept.");
         chooseLog = Choice(setupChoices, "Keep a log of links", "Which app each link came from, where it opened, and what was " +
                            "changed - kept on this PC only, the newest " + LinkLog.Keep + " links.");
-        chooseUpdates = Choice(setupChoices, "Check for updates automatically", "Once a day, ask GitHub whether a newer version " +
-                               "exists - the only time LinkPilot goes online. Left off, it asks only when you press Check now " +
-                               "on the About & updates tab. Nothing is downloaded until you choose to update.");
-        var next2 = PrimaryButton("Next  →");
+        chooseUpdates = Choice(setupChoices, "Check for updates automatically", "When LinkPilot starts and when you open its " +
+                               "window, ask GitHub whether a newer version exists - the only time it goes online. Nothing is " +
+                               "downloaded until you press Update.");
+        var next2 = Ui.Primary("Next  →");
         next2.Click += delegate { KeepChoices(); SetupStep(3); };
         setupChoices.Controls.Add(NavRow(next2, Link("←  Back", () => SetupStep(1))));
 
@@ -203,7 +214,7 @@ partial class SwitchForm
         setupDefault.Controls.Add(todo);
         setupAlready = Banner("✓", "Already done", "LinkPilot is already your default browser - there is nothing to do here.");
         setupDefault.Controls.Add(setupAlready);
-        setupGo = PrimaryButton("Open Windows Settings");
+        setupGo = Ui.Primary("Open Windows Settings");
         setupGo.Click += delegate
         {
             if (IsDefaultBrowser) { SetupStep(4); return; }
@@ -221,9 +232,17 @@ partial class SwitchForm
         setupDone.Controls.Add(Text_("From now on every link passes through LinkPilot, and goes on to the browser you choose."));
         setupNext = Text_("");
         setupDone.Controls.Add(setupNext);
-        var finish = PrimaryButton("Finish");
-        finish.Click += delegate { LeaveSetup(); };
-        setupDone.Controls.Add(NavRow(finish));
+        // the way into the guide - plainly optional
+        var more = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, BackColor = Ui.Soft,
+                                         Padding = new Padding(12, 10, 12, 8), Margin = new Padding(0, 0, 0, 6), MinimumSize = new Size(SetupWidth, 0) };
+        more.Controls.Add(new Label { Text = "A few quick things - about a minute, all optional", AutoSize = true, ForeColor = Ui.AccentDark,
+                                      Font = new Font("Segoe UI", 9.75F, FontStyle.Bold), Margin = new Padding(0, 0, 0, 2) });
+        more.Controls.Add(new Label { Text = "Your categories  ·  How you switch  ·  Rules for your apps", AutoSize = true,
+                                      Font = new Font("Segoe UI", 9.75F), Margin = new Padding(0) });
+        setupDone.Controls.Add(more);
+        var guide = Ui.Primary("Set them up  →");
+        guide.Click += delegate { StartGuide(); };
+        setupDone.Controls.Add(NavRow(guide, Link("Finish - I'll look around myself", LeaveSetup)));
 
         setupWatch.Tick += delegate
         {
@@ -235,20 +254,17 @@ partial class SwitchForm
 
         Controls.Add(setup);
         setup.BringToFront();
+        setup.VisibleChanged += delegate { ShowBanner(); };   // the update banner is not shown over the setup
     }
 
-    // The "all set" page's advice: what happens to links now, and what to do first.
+    // The "all set" page's line: where links open now - or, with no category, how to make one.
     string WhatNext()
     {
         var live = Config.Current();
         if (madeFirstCategory && live != null)
-            return "Your first category, " + live.Name + ", is ready and live: links open in " + live.Shows + ", just as before.\n" +
-                   "Next, on the Categories tab: press New category, give it a name - Work, Home, School - pick a browser " +
-                   "profile on the right and press Use this. Then switch between categories with one click: here, from the " +
-                   "dock next to the clock, or with a keyboard shortcut.";
+            return "Your first category, " + live.Name + ", is live: links open in " + live.Shows + ", just as before.";
         if (live != null)
-            return "Links open in " + live.Name + " (" + live.Shows + "). Switch categories here, from the dock next to the clock, " +
-                   "or with a keyboard shortcut.";
+            return "Links open in " + live.Name + " (" + live.Shows + ").";
         return "Until a category is live, links go to " + Program.OriginalBrowserName() + ", as before. Make one on the " +
                "Categories tab: press New category, pick a browser profile on the right and press Use this.";
     }
@@ -275,7 +291,7 @@ partial class SwitchForm
     // A big green tick with a headline and a line under it - for "done".
     static Control Banner(string mark, string headline, string under)
     {
-        var box = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = Color.FromArgb(232, 246, 237),
+        var box = new FlowLayoutPanel { AutoSize = true, WrapContents = false, BackColor = Ui.OkBack,
                                         Padding = new Padding(14, 10, 20, 10), Margin = new Padding(0, 4, 0, 14),
                                         MinimumSize = new Size(SetupWidth, 0) };
         box.Controls.Add(new Label { Text = mark, AutoSize = true, Font = new Font("Segoe UI", 30F, FontStyle.Bold), ForeColor = Done,
@@ -303,7 +319,7 @@ partial class SwitchForm
     static void Trust(TableLayoutPanel table, string what, string why)
     {
         table.Controls.Add(new Label { Text = "✓  " + what, AutoSize = true, Font = new Font("Segoe UI", 9.75F, FontStyle.Bold),
-                                       ForeColor = Color.FromArgb(0, 90, 158), Margin = new Padding(0, 0, 8, 6) });
+                                       ForeColor = Ui.AccentDark, Margin = new Padding(0, 0, 8, 6) });
         table.Controls.Add(new Label { Text = why, AutoSize = true, MaximumSize = new Size(SetupWidth - 200, 0),
                                        Font = new Font("Segoe UI", 9.75F), Margin = new Padding(0, 0, 0, 6) });
     }
@@ -314,18 +330,46 @@ partial class SwitchForm
         var tick = new CheckBox { Text = what, AutoSize = true, Font = new Font("Segoe UI", 10.5F, FontStyle.Bold), Margin = new Padding(0, 6, 0, 0) };
         column.Controls.Add(tick);
         column.Controls.Add(new Label { Text = means, AutoSize = true, MaximumSize = new Size(SetupWidth - 20, 0), UseMnemonic = false,
-                                        Font = new Font("Segoe UI", 9.75F), ForeColor = Color.FromArgb(70, 70, 70),
+                                        Font = new Font("Segoe UI", 9.75F), ForeColor = Ui.Muted,
                                         Margin = new Padding(20, 0, 0, 12) });
         return tick;
     }
 
-    static Button PrimaryButton(string text)
+    // Under Clean links: a real link before and after - worked out by the cleaner itself, so it
+    // always shows what it really does.
+    Control CleanExample()
     {
-        var b = new Button { Text = text, AutoSize = true, Height = 34, Padding = new Padding(14, 0, 14, 0),
-                             Font = new Font("Segoe UI", 9.75F, FontStyle.Bold), BackColor = Ui.Accent, ForeColor = Color.White,
-                             FlatStyle = FlatStyle.Flat };
-        b.FlatAppearance.BorderSize = 0;
-        return b;
+        var box = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, BackColor = Ui.Soft, Padding = new Padding(10, 6, 10, 4),
+                                         Margin = new Padding(20, 0, 0, 12), Width = SetupWidth - 20 };
+        box.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 52));
+        box.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, SetupWidth - 20 - 52 - 20));
+        box.Controls.Add(new Label { Text = "Before", AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(0, 0, 0, 4) });
+        box.Controls.Add(new Label { Text = ExampleLink, AutoSize = false, AutoEllipsis = true, UseMnemonic = false, Dock = DockStyle.Fill,
+                                     Height = 16, Font = ExampleFont, ForeColor = SystemColors.GrayText, Margin = new Padding(0, 1, 0, 4) });
+        box.Controls.Add(new Label { Text = "After", AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(0, 0, 0, 4) });
+        exampleAfter = new Label { AutoSize = false, AutoEllipsis = true, UseMnemonic = false, Dock = DockStyle.Fill, Height = 18, Margin = new Padding(0, 0, 0, 4) };
+        box.Controls.Add(exampleAfter);
+        return box;
+    }
+
+    void ShowExample()
+    {
+        if (!chooseClean.Checked)
+        {
+            // the link itself would not fit beside it - it is the one above
+            exampleAfter.Text = "The same link, left as it is";
+            exampleAfter.ResetFont();
+            exampleAfter.ForeColor = SystemColors.WindowText;
+            return;
+        }
+        // as it will be with cleaning on - whatever the settings are until Next
+        bool clean = Config.CleanOn, unwrap = Config.UnwrapOn;
+        Config.CleanOn = Config.UnwrapOn = true;
+        string changes, after = Cleaner.Apply(ExampleLink, out changes);
+        Config.CleanOn = clean; Config.UnwrapOn = unwrap;
+        exampleAfter.Text = after;
+        exampleAfter.Font = ExampleBold;
+        exampleAfter.ForeColor = Ui.Ok;
     }
 
     static LinkLabel Link(string text, Action click)
